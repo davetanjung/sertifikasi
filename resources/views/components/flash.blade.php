@@ -5,7 +5,7 @@
 @php
     $messages = collect([
         'success' => session('flash_success'),
-        'danger' => $errors->first('flash_danger'),
+        'danger' => isset($errors) ? $errors->first('flash_danger') : null,
     ])->filter();
 
     $styles = [

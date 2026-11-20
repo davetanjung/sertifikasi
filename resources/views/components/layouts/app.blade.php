@@ -14,8 +14,6 @@
             <x-layout.sidebar />
 
             <main class="min-w-0 flex-1 p-8">
-                <x-flash />
-
                 {{ $slot }}
             </main>
         </div>

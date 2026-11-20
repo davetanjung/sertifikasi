@@ -2,30 +2,41 @@
 
 declare(strict_types=1);
 
+namespace Tests\Feature;
+
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\View;
 use Tests\Support\TestLayoutPage;
+use Tests\TestCase;
 
-beforeEach(function () {
-    View::addLocation(base_path('tests/Support/views'));
-    $this->withoutVite();
-    Route::get('/__layout-test', TestLayoutPage::class);
-});
+class LayoutComponentsTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
 
-it('renders the navbar, sidebar, footer and page content in the layout', function () {
-    $this->get('/__layout-test')
-        ->assertOk()
-        ->assertSee(config('app.name'))
-        ->assertSee('Search...', false)
-        ->assertSee('Dashboard')
-        ->assertSee('Settings')
-        ->assertSee('Logout')
-        ->assertSee('&copy; '.now()->year, false)
-        ->assertSee('Page body here');
-});
+        View::addLocation(base_path('tests/Support/views'));
+        $this->withoutVite();
+        Route::get('/__layout-test', TestLayoutPage::class);
+    }
 
-it('shows the success and danger flash messages inside a Livewire page', function () {
-    $this->get('/__layout-test')
-        ->assertSee('Saved fine.')
-        ->assertSee('Something broke.');
-});
+    public function test_it_renders_the_navbar_sidebar_footer_and_page_content_in_the_layout(): void
+    {
+        $this->get('/__layout-test')
+            ->assertOk()
+            ->assertSee(config('app.name'))
+            ->assertSee('Search...', false)
+            ->assertSee('Dashboard')
+            ->assertSee('Settings')
+            ->assertSee('Logout')
+            ->assertSee('&copy; '.now()->year, false)
+            ->assertSee('Page body here');
+    }
+
+    public function test_it_shows_the_success_and_danger_flash_messages_inside_a_livewire_page(): void
+    {
+        $this->get('/__layout-test')
+            ->assertSee('Saved fine.')
+            ->assertSee('Something broke.');
+    }
+}

@@ -2,48 +2,58 @@
 
 declare(strict_types=1);
 
+namespace Tests\Feature;
+
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\Support\TestCreateUser;
+use Tests\TestCase;
 
-uses(RefreshDatabase::class);
+class LivewireTraitsTest extends TestCase
+{
+    use RefreshDatabase;
 
-it('creates a record through WithCreateForm and redirects', function () {
-    Livewire::test(TestCreateUser::class)
-        ->set('name', 'Dave')
-        ->set('email', 'dave@example.com')
-        ->call('submitAndBackToIndex')
-        ->assertHasNoErrors()
-        ->assertRedirect('/');
-
-    expect(User::where('email', 'dave@example.com')->exists())->toBeTrue();
-});
-
-it('validates before submitting', function () {
-    Livewire::test(TestCreateUser::class)
-        ->set('name', '')
-        ->set('email', 'not-an-email')
-        ->call('submitDefault')
-        ->assertHasErrors(['name', 'email']);
-
-    expect(User::count())->toBe(0);
-});
-
-it('reports a failure from submit instead of crashing', function () {
-    $component = new class extends TestCreateUser
+    public function test_it_creates_a_record_through_with_create_form_and_redirects(): void
     {
-        public function submit(array $validated): never
+        Livewire::test(TestCreateUser::class)
+            ->set('name', 'Dave')
+            ->set('email', 'dave@example.com')
+            ->call('submitAndBackToIndex')
+            ->assertHasNoErrors()
+            ->assertRedirect('/');
+
+        $this->assertTrue(User::where('email', 'dave@example.com')->exists());
+    }
+
+    public function test_it_validates_before_submitting(): void
+    {
+        Livewire::test(TestCreateUser::class)
+            ->set('name', '')
+            ->set('email', 'not-an-email')
+            ->call('submitDefault')
+            ->assertHasErrors(['name', 'email']);
+
+        $this->assertSame(0, User::count());
+    }
+
+    public function test_it_reports_a_failure_from_submit_instead_of_crashing(): void
+    {
+        $component = new class extends TestCreateUser
         {
-            throw new RuntimeException('boom');
-        }
-    };
+            public function submit(array $validated): never
+            {
+                throw new RuntimeException('boom');
+            }
+        };
 
-    Livewire::test($component::class)
-        ->set('name', 'Dave')
-        ->set('email', 'dave@example.com')
-        ->call('submitDefault')
-        ->assertHasErrors('flash_danger');
+        Livewire::test($component::class)
+            ->set('name', 'Dave')
+            ->set('email', 'dave@example.com')
+            ->call('submitDefault')
+            ->assertHasErrors('flash_danger');
 
-    expect(User::count())->toBe(0);
-});
+        $this->assertSame(0, User::count());
+    }
+}

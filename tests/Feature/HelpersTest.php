@@ -2,37 +2,55 @@
 
 declare(strict_types=1);
 
-it('drops blank values but keeps zero and false', function () {
-    expect(_sanitize_data(['a' => 'x', 'b' => '', 'c' => null, 'd' => 0, 'e' => false]))
-        ->toBe(['a' => 'x', 'd' => 0, 'e' => false]);
-});
+namespace Tests\Feature;
 
-it('parses dates between output and db formats', function () {
-    expect(_date_format_db('2026-11-20'))->toBe('2026-11-20')
-        ->and(_date_format_output('2026-11-20 10:30:00'))->toBe('2026-11-20')
-        ->and(_datetime_format_db('2026-11-20'))->toBe('2026-11-20 00:00:00')
-        ->and(_date_format_db(null))->toBeNull()
-        ->and(_date_format_output('not a date'))->toBe('not a date');
-});
+use Tests\TestCase;
 
-it('splits a date range into start and end of day', function () {
-    [$start, $end] = _datetime_carbon_split_filter_date('2026-11-01 - 2026-11-30');
+class HelpersTest extends TestCase
+{
+    public function test_it_drops_blank_values_but_keeps_zero_and_false(): void
+    {
+        $this->assertSame(
+            ['a' => 'x', 'd' => 0, 'e' => false],
+            _sanitize_data(['a' => 'x', 'b' => '', 'c' => null, 'd' => 0, 'e' => false]),
+        );
+    }
 
-    expect($start->toDateTimeString())->toBe('2026-11-01 00:00:00')
-        ->and($end->toDateTimeString())->toBe('2026-11-30 23:59:59');
-});
+    public function test_it_parses_dates_between_output_and_db_formats(): void
+    {
+        $this->assertSame('2026-11-20', _date_format_db('2026-11-20'));
+        $this->assertSame('2026-11-20', _date_format_output('2026-11-20 10:30:00'));
+        $this->assertSame('2026-11-20 00:00:00', _datetime_format_db('2026-11-20'));
+        $this->assertNull(_date_format_db(null));
+        $this->assertSame('not a date', _date_format_output('not a date'));
+    }
 
-it('formats numbers and money', function () {
-    expect(_get_formatted_number(1234.5))->toBe('1.234,5')
-        ->and(_money(1000, 'Rp'))->toBe('Rp 1.000')
-        ->and(_money(null))->toBeNull()
-        ->and(_round(null))->toBe(0);
-});
+    public function test_it_splits_a_date_range_into_start_and_end_of_day(): void
+    {
+        [$start, $end] = _datetime_carbon_split_filter_date('2026-11-01 - 2026-11-30');
 
-it('adds a timestamp before the file extension', function () {
-    expect(_insert_timestamp_before_extension('report.pdf'))->toMatch('/^report_\d{8}_\d{6}\.pdf$/');
-});
+        $this->assertSame('2026-11-01 00:00:00', $start->toDateTimeString());
+        $this->assertSame('2026-11-30 23:59:59', $end->toDateTimeString());
+    }
 
-it('keeps permissions off by default', function () {
-    expect(_check_permissions())->toBeFalse();
-});
+    public function test_it_formats_numbers_and_money(): void
+    {
+        $this->assertSame('1.234,5', _get_formatted_number(1234.5));
+        $this->assertSame('Rp 1.000', _money(1000, 'Rp'));
+        $this->assertNull(_money(null));
+        $this->assertSame(0, _round(null));
+    }
+
+    public function test_it_adds_a_timestamp_before_the_file_extension(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/^report_\d{8}_\d{6}\.pdf$/',
+            _insert_timestamp_before_extension('report.pdf'),
+        );
+    }
+
+    public function test_it_keeps_permissions_off_by_default(): void
+    {
+        $this->assertFalse(_check_permissions());
+    }
+}

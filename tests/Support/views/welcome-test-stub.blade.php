@@ -1,1 +1,5 @@
-<p>Page body here</p>
+<div>
+    <x-flash />
+
+    <p>Page body here</p>
+</div>
