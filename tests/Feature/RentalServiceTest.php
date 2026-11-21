@@ -511,6 +511,145 @@ class RentalServiceTest extends TestCase
         $this->assertLessThanOrEqual(4, count(DB::getQueryLog()));
     }
 
+    public function test_period_for_a_daily_rental_defaults_to_today(): void
+    {
+        $this->assertSame(
+            ['start_date' => '2026-11-10', 'end_date' => '2026-11-14', 'days' => 5],
+            RentalService::period(Const_Type::RENTAL_DAILY, null, '5'),
+        );
+    }
+
+    public function test_period_for_a_monthly_rental_covers_the_start_month_length(): void
+    {
+        $this->assertSame(
+            ['start_date' => '2026-12-01', 'end_date' => '2026-12-31', 'days' => 31],
+            RentalService::period(Const_Type::RENTAL_MONTHLY, '2026-12-01'),
+        );
+    }
+
+    public function test_period_accepts_a_carbon_start_date(): void
+    {
+        $period = RentalService::period(Const_Type::RENTAL_DAILY, Carbon::parse('2026-11-12 15:00:00'), 2);
+
+        $this->assertSame('2026-11-12', $period['start_date']);
+        $this->assertSame('2026-11-13', $period['end_date']);
+    }
+
+    public function test_period_rejects_invalid_input_with_the_create_messages(): void
+    {
+        $cases = [
+            ['weekly', null, 2, 'Rental type is not valid.'],
+            [Const_Type::RENTAL_DAILY, '2026-11-09', 2, 'Start date cannot be before today.'],
+            [Const_Type::RENTAL_DAILY, null, null, 'Number of days is required for a daily rental.'],
+            [Const_Type::RENTAL_DAILY, null, 'abc', 'Number of days is required for a daily rental.'],
+            [Const_Type::RENTAL_DAILY, null, 0, 'Days must be between 1 and 29 for this month.'],
+            [Const_Type::RENTAL_DAILY, null, 30, 'Days must be between 1 and 29 for this month.'],
+        ];
+
+        foreach ($cases as [$type, $start, $days, $message]) {
+            try {
+                RentalService::period($type, $start, $days);
+                $this->fail('Expected GeneralException was not thrown.');
+            } catch (GeneralException $exception) {
+                $this->assertSame($message, $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_preview_extension_matches_extend_and_saves_nothing(): void
+    {
+        $rental = $this->rent($this->carGarage(100000), $this->carOf(), ['days' => 3]); // 10 to 12 Nov
+
+        $preview = RentalService::previewExtension($rental, '2026-11-15');
+
+        $this->assertSame(1, Rental::count());
+        $this->assertSame([
+            'current_end_date' => '2026-11-12',
+            'start_date' => '2026-11-13',
+            'end_date' => '2026-11-15',
+            'added_days' => 3,
+            'daily_price' => 100000.0,
+            'rent_amount' => 300000.0,
+        ], $preview);
+
+        $extension = RentalService::extend($rental, '2026-11-15', 'proofs/ext.jpg');
+
+        $this->assertSame($preview['start_date'], $extension->start_date->toDateString());
+        $this->assertSame($preview['end_date'], $extension->end_date->toDateString());
+        $this->assertSame($preview['added_days'], $extension->days);
+        $this->assertSame($preview['rent_amount'], (float) $extension->fresh()->rent_amount);
+    }
+
+    public function test_preview_extension_of_a_monthly_rental_uses_the_daily_price(): void
+    {
+        $rental = $this->rent($this->carGarage(100000), $this->carOf(), [
+            'rental_type' => Const_Type::RENTAL_MONTHLY,
+            'days' => null,
+        ]); // 10 Nov to 9 Dec
+
+        $preview = RentalService::previewExtension($rental, '2026-12-12');
+
+        $this->assertSame(3, $preview['added_days']);
+        $this->assertSame(300000.0, $preview['rent_amount']);
+    }
+
+    public function test_preview_extension_chains_from_the_latest_extension_with_any_row(): void
+    {
+        $rental = $this->rent($this->carGarage(100000), $this->carOf(), ['days' => 3]);
+        $first = RentalService::extend($rental, '2026-11-14', 'proofs/ext1.jpg');
+
+        $preview = RentalService::previewExtension($first, Carbon::parse('2026-11-16'));
+
+        $this->assertSame('2026-11-14', $preview['current_end_date']);
+        $this->assertSame('2026-11-15', $preview['start_date']);
+        $this->assertSame(2, $preview['added_days']);
+    }
+
+    public function test_preview_extension_applies_the_same_rules_as_extend(): void
+    {
+        $garage = $this->carGarage();
+        $rental = $this->rent($garage, $this->carOf(), ['days' => 3]); // 10 to 12 Nov
+        $this->rent($garage, $this->carOf(), ['start_date' => '2026-11-16', 'days' => 3]); // 16 to 18 Nov, same garage
+
+        $cases = [
+            'same end date' => [$rental, '2026-11-12', 'The new end date must be after the current end date.'],
+            'shorter' => [$rental, '2026-11-11', 'The new end date must be after the current end date.'],
+            'garage booked' => [$rental, '2026-11-16', 'Garage is booked from 2026-11-16.'],
+        ];
+
+        foreach ($cases as $name => [$target, $newEnd, $message]) {
+            try {
+                RentalService::previewExtension($target, $newEnd);
+                $this->fail("Expected GeneralException for {$name}.");
+            } catch (GeneralException $exception) {
+                $this->assertSame($message, $exception->getMessage(), $name);
+            }
+        }
+
+        // The same vehicle is in another garage from 20 Nov.
+        $vehicle = $this->carOf();
+        $vehicleRental = $this->rent($this->carGarage(), $vehicle, ['days' => 3]); // 10 to 12 Nov
+        $this->rent($this->carGarage(), $vehicle, ['start_date' => '2026-11-20', 'days' => 2]);
+
+        try {
+            RentalService::previewExtension($vehicleRental, '2026-11-21');
+            $this->fail('Expected GeneralException for the vehicle overlap.');
+        } catch (GeneralException $exception) {
+            $this->assertSame('This vehicle is already rented for those dates.', $exception->getMessage());
+        }
+    }
+
+    public function test_preview_extension_rejects_a_rental_that_has_ended(): void
+    {
+        $rental = $this->rent($this->carGarage(), $this->carOf(), ['days' => 3]); // ends 12 Nov
+        Carbon::setTestNow('2026-11-13 09:00:00');
+
+        $this->expectException(GeneralException::class);
+        $this->expectExceptionMessage('The rental has already ended and cannot be extended.');
+
+        RentalService::previewExtension($rental, '2026-11-20');
+    }
+
     /**
      * Assert the callback throws a GeneralException.
      */

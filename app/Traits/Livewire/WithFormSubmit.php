@@ -52,10 +52,13 @@ trait WithFormSubmit
 
     private function processSubmit(string $to)
     {
+        $transactionStarted = false;
+
         try {
             $validated = _sanitize_data($this->validate());
 
             DB::beginTransaction();
+            $transactionStarted = true;
             $obj = $this->submit($validated);
             DB::commit();
 
@@ -71,7 +74,11 @@ trait WithFormSubmit
                 default => $obj->getRouteIndex(),
             });
         } catch (Exception $exception) {
-            DB::rollBack();
+            // Only roll back a transaction this method opened: a validation error happens before it starts.
+            if ($transactionStarted) {
+                DB::rollBack();
+            }
+
             $this->dispatch('page-to-top');
 
             if ($exception instanceof ValidationException) {

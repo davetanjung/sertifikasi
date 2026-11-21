@@ -26,6 +26,16 @@ final class ReportService
     private const MAXIMUM_YEAR = 2300;
 
     /**
+     * The years to pick from in a report: the first supported year up to next year.
+     *
+     * @return list<int>
+     */
+    public static function years(): array
+    {
+        return range(self::MINIMUM_YEAR, max(self::MINIMUM_YEAR, now()->year + 1));
+    }
+
+    /**
      * Twelve rows, January to December, months without activity included.
      *
      * @return list<array{month: int, rentals: int, rent_income: float, charging_income: float, total_income: float}>

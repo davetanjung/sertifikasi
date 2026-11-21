@@ -1,58 +1,87 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Garage Rental App
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A web app for a company that rents vehicle garages by the day or by the month. There are three garage
+types (bicycle, car, electric car), electric cars can pay for EV charging, and there are two roles:
+admin and tenant.
 
-## About Laravel
+Stack: Laravel 13, Livewire 4, Tailwind CSS 4, PHPUnit.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+The full spec is in [docs/requirements.md](docs/requirements.md) (Indonesian) and the database
+schema is in [docs/erd.md](docs/erd.md).
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Setup
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+npm install
+cp .env.example .env
+php artisan key:generate
+# configure DB_* in .env, then:
+php artisan migrate:fresh --seed
+php artisan storage:link   # needed to show uploaded payment proofs
+composer run dev
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+`migrate:fresh --seed` also loads demo data: 10 tenants, 10 vehicles, 10 garages, rentals in the past,
+running and upcoming, two extensions and some charging transactions.
 
-## Contributing
+## Demo logins
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+All passwords are `12345678`.
 
-## Code of Conduct
+| Role   | Login                                    | Status                                |
+|--------|------------------------------------------|---------------------------------------|
+| Admin  | `admin@test`                             | approved                              |
+| Tenant | `tenant1@test.com` to `tenant7@test.com` | approved, can log in                  |
+| Tenant | `tenant8@test.com`                       | rejected, cannot log in               |
+| Tenant | `tenant9@test.com`, `tenant10@test.com`  | pending, waiting for admin to approve |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Tests
 
-## Security Vulnerabilities
+```bash
+php artisan test
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+Tests use PHPUnit classes in `tests/Feature` and `tests/Unit`.
 
-## License
+## Features
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Tenant:
+- Register (NIK, name, phone, email, password) and wait for approval.
+- Manage own vehicles.
+- Rent a garage (daily or monthly, start today or later) with a payment proof.
+- Add EV charging sessions to a running electric garage rental.
+- See own rentals and charging transactions.
+
+Admin:
+- Approve or reject tenant registrations.
+- Create garages in batches (type, quantity, daily price, price per kWh for electric garages).
+- Extend a running rental and upload the payment proof.
+- View reports per month, per day, per garage type and per tenant.
+
+## Business rules
+
+- Only approved tenants can log in. Admins are created by the seeder only.
+- Bicycles and motorcycles fit bicycle garages, cars fit car garages, electric cars fit car or electric garages.
+- Plate number is required for every vehicle except bicycles.
+- Monthly price = 25 x the daily price.
+- Daily rental maximum = days in the start month - 1. A monthly rental lasts the whole start month.
+- Availability is computed from dates. A garage cannot be booked twice for overlapping dates, and a vehicle
+  cannot be in two garages at the same time.
+- EV charging cost = (max kW - current kW) x price per kWh, only for an electric car in an electric garage.
+- An extension is a new row with status `extension` and the same rental code. Extra cost = added days x daily price.
+- Prices are copied into each rental, so later price changes do not alter old rentals.
+
+## Codes
+
+- Garages: `S001` (bicycle), `C001` (car), `E001` (electric car), numbered per type up to 999.
+- Rentals: `RNT-YYYYMMDD-NNNN`, for example `RNT-20261121-0001`. Extensions keep the code of their rental.
+
+## Folder map
+
+- `app/Livewire/` - Livewire pages (Index, Create, Show, no edit or delete) with one folder per module.
+- `app/Services/` - business logic as static services (rentals, garages, charging, reports, users, vehicles).
+- `app/Models/` - Eloquent models.
+- `app/Utilities/Constants/` - allowed values (`Const_Role`, `Const_Status`, `Const_Type`, `Const_Date`).
+- `database/seeders/` - admin and demo data, built through the services.
+- `docs/` - requirements and ERD.

@@ -111,25 +111,51 @@ final class RentalService
      */
     private static function calculateTerms(Garage $garage, array $data, ?Vehicle $vehicle = null): array
     {
-        $startDate = isset($data['start_date']) && $data['start_date'] !== ''
-            ? Carbon::parse($data['start_date'])->startOfDay()
-            : today();
-
-        if ($startDate->lt(today())) {
-            throw new GeneralException('Start date cannot be before today.');
-        }
+        $period = self::period($data['rental_type'] ?? '', $data['start_date'] ?? null, $data['days'] ?? null);
 
         if ($vehicle !== null && ! in_array($garage->type, GarageService::typesFor($vehicle->type), true)) {
             throw new GeneralException('This vehicle does not fit that garage type.');
         }
 
-        $rentalType = $data['rental_type'] ?? null;
-        $daysInMonth = $startDate->daysInMonth;
+        $rentalType = $data['rental_type'];
         $dailyPrice = (float) $garage->daily_price;
+        $days = $period['days'];
+
+        $rentAmount = $rentalType === Const_Type::RENTAL_DAILY
+            ? round($dailyPrice * $days, 2)
+            : round($dailyPrice * self::MONTHLY_PRICE_FACTOR, 2);
+
+        return [
+            'start' => Carbon::parse($period['start_date'])->startOfDay(),
+            'end' => Carbon::parse($period['end_date'])->startOfDay(),
+            'days' => $days,
+            'rent_amount' => $rentAmount,
+            'rental_type' => $rentalType,
+        ];
+    }
+
+    /**
+     * The dates and number of days of a rental, before any garage is chosen. Daily rentals use the
+     * given days (1 to the days in the start month minus 1); monthly rentals last the whole start month.
+     * An empty start date means today.
+     *
+     * @return array{start_date: string, end_date: string, days: int}
+     *
+     * @throws GeneralException
+     */
+    public static function period(string $rentalType, string|CarbonInterface|null $startDate, mixed $days = null): array
+    {
+        $start = $startDate !== null && $startDate !== ''
+            ? Carbon::parse($startDate)->startOfDay()
+            : today();
+
+        if ($start->lt(today())) {
+            throw new GeneralException('Start date cannot be before today.');
+        }
+
+        $daysInMonth = $start->daysInMonth;
 
         if ($rentalType === Const_Type::RENTAL_DAILY) {
-            $days = $data['days'] ?? null;
-
             if ($days === null || $days === '' || ! is_numeric($days)) {
                 throw new GeneralException('Number of days is required for a daily rental.');
             }
@@ -140,21 +166,16 @@ final class RentalService
             if ($days < 1 || $days > $maximumDays) {
                 throw new GeneralException("Days must be between 1 and {$maximumDays} for this month.");
             }
-
-            $rentAmount = round($dailyPrice * $days, 2);
         } elseif ($rentalType === Const_Type::RENTAL_MONTHLY) {
             $days = $daysInMonth;
-            $rentAmount = round($dailyPrice * self::MONTHLY_PRICE_FACTOR, 2);
         } else {
             throw new GeneralException('Rental type is not valid.');
         }
 
         return [
-            'start' => $startDate,
-            'end' => $startDate->copy()->addDays($days - 1),
+            'start_date' => $start->toDateString(),
+            'end_date' => $start->copy()->addDays($days - 1)->toDateString(),
             'days' => $days,
-            'rent_amount' => $rentAmount,
-            'rental_type' => $rentalType,
         ];
     }
 
@@ -244,6 +265,56 @@ final class RentalService
             throw new GeneralException('Payment proof is required.');
         }
 
+        $terms = self::extensionTerms($rental, $newEndDate);
+        $original = $terms['original'];
+
+        return Rental::create([
+            'user_id' => $original->user_id,
+            'garage_id' => $original->garage_id,
+            'vehicle_id' => $original->vehicle_id,
+            'code' => $original->code,
+            'status' => Const_Status::EXTENSION,
+            'rental_type' => $original->rental_type,
+            'start_date' => $terms['start']->toDateString(),
+            'end_date' => $terms['end']->toDateString(),
+            'days' => $terms['added_days'],
+            'daily_price' => $original->daily_price,
+            'rent_amount' => $terms['rent_amount'],
+            'payment_proof_path' => $paymentProofPath,
+        ]);
+    }
+
+    /**
+     * Show what extend() would save for a new end date, without saving anything. It applies the same
+     * rules as extend() except the payment proof.
+     *
+     * @return array{current_end_date: string, start_date: string, end_date: string, added_days: int, daily_price: float, rent_amount: float}
+     *
+     * @throws GeneralException
+     */
+    public static function previewExtension(Rental $rental, string|CarbonInterface $newEndDate): array
+    {
+        $terms = self::extensionTerms($rental, $newEndDate);
+
+        return [
+            'current_end_date' => $terms['current_end']->toDateString(),
+            'start_date' => $terms['start']->toDateString(),
+            'end_date' => $terms['end']->toDateString(),
+            'added_days' => $terms['added_days'],
+            'daily_price' => (float) $terms['original']->daily_price,
+            'rent_amount' => $terms['rent_amount'],
+        ];
+    }
+
+    /**
+     * The checks, dates and cost shared by extend() and previewExtension().
+     *
+     * @return array{original: Rental, current_end: Carbon, start: Carbon, end: Carbon, added_days: int, rent_amount: float}
+     *
+     * @throws GeneralException
+     */
+    private static function extensionTerms(Rental $rental, string|CarbonInterface $newEndDate): array
+    {
         $rows = self::rowsOf($rental);
         $currentEnd = self::latestEndDate($rental)->copy()->startOfDay();
         $newEnd = Carbon::parse($newEndDate)->startOfDay();
@@ -272,20 +343,14 @@ final class RentalService
 
         $addedDays = (int) $extensionStart->diffInDays($newEnd) + 1;
 
-        return Rental::create([
-            'user_id' => $original->user_id,
-            'garage_id' => $original->garage_id,
-            'vehicle_id' => $original->vehicle_id,
-            'code' => $original->code,
-            'status' => Const_Status::EXTENSION,
-            'rental_type' => $original->rental_type,
-            'start_date' => $extensionStart->toDateString(),
-            'end_date' => $newEnd->toDateString(),
-            'days' => $addedDays,
-            'daily_price' => $original->daily_price,
+        return [
+            'original' => $original,
+            'current_end' => $currentEnd,
+            'start' => $extensionStart,
+            'end' => $newEnd,
+            'added_days' => $addedDays,
             'rent_amount' => round((float) $original->daily_price * $addedDays, 2),
-            'payment_proof_path' => $paymentProofPath,
-        ]);
+        ];
     }
 
     /**

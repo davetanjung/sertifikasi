@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Traits\HasCoreFeature;
+use App\Utilities\Constants\Const_Role;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 
@@ -47,6 +48,14 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Whether this user is an admin.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === Const_Role::ADMIN;
     }
 
     /**

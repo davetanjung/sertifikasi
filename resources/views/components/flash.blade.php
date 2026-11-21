@@ -9,8 +9,13 @@
     ])->filter();
 
     $styles = [
-        'success' => 'border-green-300 bg-green-50 text-green-900',
-        'danger' => 'border-red-300 bg-red-50 text-red-900',
+        'success' => 'border-green-800 bg-green-800 text-white',
+        'danger' => 'border-red-800 bg-red-800 text-white',
+    ];
+
+    $icons = [
+        'success' => 'check-circle',
+        'danger' => 'exclamation-circle',
     ];
 @endphp
 
@@ -20,14 +25,14 @@
         x-show="show"
         x-transition.opacity
         role="{{ $type === 'danger' ? 'alert' : 'status' }}"
-        class="mb-6 flex items-start justify-between gap-4 rounded-md border px-4 py-3 text-sm {{ $styles[$type] }}"
+        class="mb-6 flex items-start gap-3 rounded-md border px-4 py-3 text-sm {{ $styles[$type] }}"
     >
-        <p>{{ $message }}</p>
+        <x-icon :name="$icons[$type]" class="mt-0.5 size-5 shrink-0" />
 
-        <button type="button" class="-m-1 rounded p-1 hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-current" @click="show = false" aria-label="Dismiss">
-            <svg class="size-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="m5 5 10 10M15 5 5 15" stroke-linecap="round" />
-            </svg>
+        <p class="flex-1 font-bold">{{ $message }}</p>
+
+        <button type="button" class="-m-1 rounded p-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-current {{ $type === 'danger' ? 'hover:bg-red-900' : 'hover:bg-green-900' }}" @click="show = false" aria-label="Dismiss">
+            <x-icon name="x" class="size-4" />
         </button>
     </div>
 @endforeach

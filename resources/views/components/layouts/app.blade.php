@@ -6,18 +6,22 @@
         <title>{{ isset($title) ? $title . ' - ' : '' }}{{ config('app.name') }}</title>
 
         @vite(['resources/css/app.css', 'resources/js/app.js'])
+        @livewireStyles
     </head>
-    <body class="flex min-h-screen flex-col bg-zinc-200 font-sans text-zinc-900 antialiased">
-        <x-layout.navbar />
-
-        <div class="flex flex-1">
+    <body class="min-h-screen bg-white font-sans text-black antialiased">
+        <div x-data="{ sidebarOpen: false }" @keydown.escape.window="sidebarOpen = false">
             <x-layout.sidebar />
 
-            <main class="min-w-0 flex-1 p-8">
-                {{ $slot }}
-            </main>
-        </div>
+            <div class="flex min-h-screen flex-col lg:pl-64">
+                <x-layout.navbar />
 
-        <x-layout.footer />
+                <main class="min-w-0 flex-1 p-4 sm:p-6 lg:p-8">
+                    {{ $slot }}
+                </main>
+
+                <x-layout.footer />
+            </div>
+        </div>
+        @livewireScripts
     </body>
 </html>

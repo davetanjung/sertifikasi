@@ -282,6 +282,18 @@ class ReportServiceTest extends TestCase
         $this->assertSame([], ReportService::byTenant(2026));
     }
 
+    public function test_years_run_from_the_first_year_to_next_year(): void
+    {
+        Carbon::setTestNow('2026-11-10 09:00:00');
+        $this->assertSame([2026, 2027], ReportService::years());
+
+        Carbon::setTestNow('2028-02-01 09:00:00');
+        $this->assertSame([2026, 2027, 2028, 2029], ReportService::years());
+
+        Carbon::setTestNow('2020-01-01 09:00:00');
+        $this->assertSame([2026], ReportService::years());
+    }
+
     public function test_invalid_filters_throw_a_general_exception(): void
     {
         $invalid = [

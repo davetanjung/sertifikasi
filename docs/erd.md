@@ -23,7 +23,7 @@ erDiagram
         uuid id PK
         uuid user_id FK
         string type "bicycle | motorcycle | car | electric_car"
-        string plate_number "null hanya untuk bicycle"
+        string plate_number UK "null hanya untuk bicycle"
         string brand
         string model
         decimal maximum_capacity_kw "nullable"
@@ -33,7 +33,6 @@ erDiagram
         uuid id PK
         string code UK "S001, C010, E003"
         string type "bicycle | car | electric_car"
-        bigint number "1 sampai 999"
         decimal daily_price
         decimal price_per_kwh "nullable"
     }

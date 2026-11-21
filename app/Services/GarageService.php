@@ -9,6 +9,7 @@ use App\Models\Garage;
 use App\Utilities\Constants\Const_Type;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 
@@ -44,13 +45,7 @@ final class GarageService
             throw new GeneralException('Price per kWh is required for electric car garages.');
         }
 
-        $prefix = $template->autoNumberPrefix();
-        $lastCode = Garage::query()
-            ->where('type', $type)
-            ->where('code', 'like', $prefix.'%')
-            ->orderByDesc('code')
-            ->value('code');
-        $highest = $lastCode === null ? 0 : (int) substr((string) $lastCode, -3);
+        $highest = self::highestNumber($type);
 
         if ($highest + $quantity > self::MAX_NUMBER) {
             $remaining = self::MAX_NUMBER - $highest;
@@ -72,6 +67,53 @@ final class GarageService
         }
 
         return $garages;
+    }
+
+    /**
+     * Preview the codes a batch would get. Never throws for a quantity that does not fit
+     * (then `fits` is false and first/last are null).
+     *
+     * @return array{first: string|null, last: string|null, remaining: int, fits: bool}
+     *
+     * @throws GeneralException
+     */
+    public static function nextCodes(string $type, int $quantity): array
+    {
+        if (! in_array($type, Const_Type::GARAGE_TYPES, true)) {
+            throw new GeneralException('Garage type is not valid.');
+        }
+
+        $highest = self::highestNumber($type);
+        $remaining = self::MAX_NUMBER - $highest;
+        $fits = $quantity >= 1 && $quantity <= $remaining;
+
+        if (! $fits) {
+            return ['first' => null, 'last' => null, 'remaining' => $remaining, 'fits' => false];
+        }
+
+        $prefix = (new Garage(['type' => $type]))->autoNumberPrefix();
+
+        return [
+            'first' => $prefix.str_pad((string) ($highest + 1), 3, '0', STR_PAD_LEFT),
+            'last' => $prefix.str_pad((string) ($highest + $quantity), 3, '0', STR_PAD_LEFT),
+            'remaining' => $remaining,
+            'fits' => true,
+        ];
+    }
+
+    /**
+     * The highest running number used so far for a garage type (0 when there is none).
+     */
+    private static function highestNumber(string $type): int
+    {
+        $prefix = (new Garage(['type' => $type]))->autoNumberPrefix();
+        $lastCode = Garage::query()
+            ->where('type', $type)
+            ->where('code', 'like', $prefix.'%')
+            ->orderByDesc('code')
+            ->value('code');
+
+        return $lastCode === null ? 0 : (int) substr((string) $lastCode, -3);
     }
 
     /**
@@ -103,6 +145,31 @@ final class GarageService
             throw new GeneralException('Garage type is not valid.');
         }
 
+        return self::availableForTypes([$type], $start, $end)['garages'];
+    }
+
+    /**
+     * Free garages of several types in one query, ordered by code, with an optional code search
+     * and limit. `total` counts every free garage matching the types and search, ignoring the limit.
+     *
+     * @param  list<string>  $types
+     * @return array{garages: EloquentCollection<int, Garage>, total: int}
+     *
+     * @throws GeneralException
+     */
+    public static function availableForTypes(
+        array $types,
+        string|CarbonInterface $start,
+        string|CarbonInterface $end,
+        ?string $search = null,
+        ?int $limit = null,
+    ): array {
+        foreach ($types as $type) {
+            if (! in_array($type, Const_Type::GARAGE_TYPES, true)) {
+                throw new GeneralException('Garage type is not valid.');
+            }
+        }
+
         $startDate = Carbon::parse($start)->startOfDay();
         $endDate = Carbon::parse($end)->startOfDay();
 
@@ -110,13 +177,41 @@ final class GarageService
             throw new GeneralException('End date cannot be before start date.');
         }
 
-        return Garage::query()
-            ->where('type', $type)
-            ->whereDoesntHave('rentals', function ($query) use ($startDate, $endDate): void {
-                $query->whereDate('start_date', '<=', $endDate->toDateString())
-                    ->whereDate('end_date', '>=', $startDate->toDateString());
-            })
-            ->orderBy('code')
+        $query = Garage::query()
+            ->whereIn('type', $types)
+            ->tap(fn ($query) => self::whereFree($query, $startDate, $endDate));
+
+        $search = trim((string) $search);
+
+        if ($search !== '') {
+            // "!" is the escape character, so "%" and "_" typed by the user match literally.
+            $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($search));
+            $query->whereRaw("lower(code) like ? escape '!'", ['%'.$escaped.'%']);
+        }
+
+        $total = (clone $query)->count();
+
+        $garages = $query->orderBy('code')
+            ->when($limit !== null, fn ($query) => $query->limit(max($limit, 0)))
             ->get();
+
+        return ['garages' => $garages, 'total' => $total];
+    }
+
+    /**
+     * The one rule for "free in this period": no rental row (new or extension) overlaps the dates.
+     * Same overlap rule as RentalService::create().
+     *
+     * @param  Builder<Garage>  $query
+     */
+    public static function whereFree(Builder $query, string|CarbonInterface $start, string|CarbonInterface $end): void
+    {
+        $startDate = Carbon::parse($start)->startOfDay();
+        $endDate = Carbon::parse($end)->startOfDay();
+
+        $query->whereDoesntHave('rentals', function ($query) use ($startDate, $endDate): void {
+            $query->whereDate('start_date', '<=', $endDate->toDateString())
+                ->whereDate('end_date', '>=', $startDate->toDateString());
+        });
     }
 }
