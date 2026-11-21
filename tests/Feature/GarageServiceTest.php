@@ -4,8 +4,13 @@ namespace Tests\Feature;
 
 use App\Exceptions\GeneralException;
 use App\Models\Garage;
+use App\Models\User;
+use App\Models\Vehicle;
 use App\Services\GarageService;
+use App\Services\RentalService;
 use App\Utilities\Constants\Const_Type;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -85,6 +90,78 @@ class GarageServiceTest extends TestCase
         $this->expectException(GeneralException::class);
 
         GarageService::createBatch(Const_Type::GARAGE_CAR, 0, 50000);
+    }
+
+    public function test_types_for_a_vehicle_type(): void
+    {
+        $this->assertSame([Const_Type::GARAGE_BICYCLE], GarageService::typesFor(Const_Type::VEHICLE_BICYCLE));
+        $this->assertSame([Const_Type::GARAGE_BICYCLE], GarageService::typesFor(Const_Type::VEHICLE_MOTORCYCLE));
+        $this->assertSame([Const_Type::GARAGE_CAR], GarageService::typesFor(Const_Type::VEHICLE_CAR));
+        $this->assertSame(
+            [Const_Type::GARAGE_CAR, Const_Type::GARAGE_ELECTRIC_CAR],
+            GarageService::typesFor(Const_Type::VEHICLE_ELECTRIC_CAR)
+        );
+        $this->assertSame([], GarageService::typesFor('truck'));
+    }
+
+    public function test_available_for_excludes_overlaps_includes_back_to_back_and_orders_by_code(): void
+    {
+        Carbon::setTestNow('2026-11-10 09:00:00');
+
+        $garages = GarageService::createBatch(Const_Type::GARAGE_CAR, 5, 100000); // C001 to C005
+        $user = User::factory()->create();
+
+        // Asked range: 15 to 18 Nov. C001: 10 to 12 Nov (free). C002: 10 to 12 Nov plus an extension
+        // 13 to 16 Nov (overlaps). C003: ends 14 Nov (back to back). C004 and C005: no rentals.
+        RentalService::create($this->rentalData($garages[0], $user, 3));
+        $withExtension = RentalService::create($this->rentalData($garages[1], $user, 3));
+        RentalService::extend($withExtension, '2026-11-16', 'proofs/ext.jpg');
+        RentalService::create($this->rentalData($garages[2], $user, 5));
+
+        $available = GarageService::availableFor(Const_Type::GARAGE_CAR, '2026-11-15', '2026-11-18');
+
+        $this->assertSame(['C001', 'C003', 'C004', 'C005'], $available->pluck('code')->all());
+        $this->assertInstanceOf(EloquentCollection::class, $available);
+
+        $overlappingNew = GarageService::availableFor(Const_Type::GARAGE_CAR, '2026-11-12', '2026-11-12');
+        $this->assertNotContains('C001', $overlappingNew->pluck('code')->all());
+        $this->assertNotContains('C002', $overlappingNew->pluck('code')->all());
+        $this->assertNotContains('C003', $overlappingNew->pluck('code')->all());
+
+        Carbon::setTestNow();
+    }
+
+    public function test_available_for_rejects_a_bad_type_and_an_end_before_the_start(): void
+    {
+        try {
+            GarageService::availableFor('truck', '2026-11-10', '2026-11-12');
+            $this->fail('Expected GeneralException was not thrown.');
+        } catch (GeneralException $exception) {
+            $this->assertSame('Garage type is not valid.', $exception->getMessage());
+        }
+
+        $this->expectException(GeneralException::class);
+
+        GarageService::availableFor(Const_Type::GARAGE_CAR, '2026-11-12', '2026-11-10');
+    }
+
+    /**
+     * Data for a daily rental of a fresh car owned by the user.
+     *
+     * @return array<string, mixed>
+     */
+    private function rentalData(Garage $garage, User $user, int $days): array
+    {
+        $vehicle = Vehicle::factory()->car()->for($user)->create();
+
+        return [
+            'user_id' => $user->id,
+            'vehicle_id' => $vehicle->id,
+            'garage_id' => $garage->id,
+            'rental_type' => Const_Type::RENTAL_DAILY,
+            'days' => $days,
+            'payment_proof_path' => 'proofs/new.jpg',
+        ];
     }
 
     public function test_a_bad_type_throws(): void

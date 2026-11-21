@@ -43,30 +43,74 @@ final class RentalService
     }
 
     /**
-     * The checks and the insert of create(), run while the garage and vehicle rows are locked.
+     * Work out the dates, days and price of a new rental without saving anything. No vehicle, tenant,
+     * payment proof or availability is needed, so it does not check them.
+     *
+     * Keys: garage_id, rental_type, start_date (optional, default today), days (daily only).
      *
      * @param  array<string, mixed>  $data
+     * @return array{start_date: string, end_date: string, days: int, daily_price: float, rent_amount: float, rental_type: string}
      *
      * @throws GeneralException
      */
-    private static function createRental(array $data, ?Vehicle $vehicle, ?Garage $garage): Rental
+    public static function preview(array $data): array
     {
-        if ($vehicle === null) {
-            throw new GeneralException('Vehicle was not found.');
-        }
+        $garage = Garage::query()->find($data['garage_id'] ?? null);
 
         if ($garage === null) {
             throw new GeneralException('Garage was not found.');
         }
 
-        if ($vehicle->user_id !== ($data['user_id'] ?? null)) {
-            throw new GeneralException('The vehicle does not belong to this tenant.');
-        }
+        $terms = self::calculateTerms($garage, $data);
 
-        if (empty($data['payment_proof_path'])) {
-            throw new GeneralException('Payment proof is required.');
-        }
+        return [
+            'start_date' => $terms['start']->toDateString(),
+            'end_date' => $terms['end']->toDateString(),
+            'days' => $terms['days'],
+            'daily_price' => (float) $garage->daily_price,
+            'rent_amount' => $terms['rent_amount'],
+            'rental_type' => $terms['rental_type'],
+        ];
+    }
 
+    /**
+     * The rentals running today, for the admin extend list: one entry per rental, as the new row,
+     * with garage, vehicle and user loaded, ordered by garage code. Extension rows count as running.
+     *
+     * @return Collection<int, Rental>
+     */
+    public static function activeRentals(): Collection
+    {
+        $today = today()->toDateString();
+
+        return Rental::query()
+            ->where('status', Const_Status::NEW)
+            ->whereExists(function ($query) use ($today): void {
+                $query->selectRaw('1')
+                    ->from('rentals as same_rental')
+                    ->whereColumn('same_rental.code', 'rentals.code')
+                    ->whereColumn('same_rental.user_id', 'rentals.user_id')
+                    ->whereColumn('same_rental.garage_id', 'rentals.garage_id')
+                    ->whereDate('same_rental.start_date', '<=', $today)
+                    ->whereDate('same_rental.end_date', '>=', $today);
+            })
+            ->with(['garage', 'vehicle', 'user'])
+            ->get()
+            ->sortBy(fn (Rental $rental) => $rental->garage->code)
+            ->values();
+    }
+
+    /**
+     * The date, days and price rules shared by create() and preview(). When a vehicle is given,
+     * it must also fit the garage type.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{start: Carbon, end: Carbon, days: int, rent_amount: float, rental_type: string}
+     *
+     * @throws GeneralException
+     */
+    private static function calculateTerms(Garage $garage, array $data, ?Vehicle $vehicle = null): array
+    {
         $startDate = isset($data['start_date']) && $data['start_date'] !== ''
             ? Carbon::parse($data['start_date'])->startOfDay()
             : today();
@@ -75,7 +119,7 @@ final class RentalService
             throw new GeneralException('Start date cannot be before today.');
         }
 
-        if (! in_array($garage->type, self::garageTypesFor($vehicle->type), true)) {
+        if ($vehicle !== null && ! in_array($garage->type, GarageService::typesFor($vehicle->type), true)) {
             throw new GeneralException('This vehicle does not fit that garage type.');
         }
 
@@ -105,7 +149,46 @@ final class RentalService
             throw new GeneralException('Rental type is not valid.');
         }
 
-        $endDate = $startDate->copy()->addDays($days - 1);
+        return [
+            'start' => $startDate,
+            'end' => $startDate->copy()->addDays($days - 1),
+            'days' => $days,
+            'rent_amount' => $rentAmount,
+            'rental_type' => $rentalType,
+        ];
+    }
+
+    /**
+     * The checks and the insert of create(), run while the garage and vehicle rows are locked.
+     *
+     * @param  array<string, mixed>  $data
+     *
+     * @throws GeneralException
+     */
+    private static function createRental(array $data, ?Vehicle $vehicle, ?Garage $garage): Rental
+    {
+        if ($vehicle === null) {
+            throw new GeneralException('Vehicle was not found.');
+        }
+
+        if ($garage === null) {
+            throw new GeneralException('Garage was not found.');
+        }
+
+        if ($vehicle->user_id !== ($data['user_id'] ?? null)) {
+            throw new GeneralException('The vehicle does not belong to this tenant.');
+        }
+
+        if (empty($data['payment_proof_path'])) {
+            throw new GeneralException('Payment proof is required.');
+        }
+
+        $terms = self::calculateTerms($garage, $data, $vehicle);
+        $startDate = $terms['start'];
+        $endDate = $terms['end'];
+        $days = $terms['days'];
+        $rentAmount = $terms['rent_amount'];
+        $rentalType = $terms['rental_type'];
 
         $conflict = self::overlappingRentals($garage->id, $startDate, $endDate)->first();
 
@@ -220,7 +303,7 @@ final class RentalService
      * Whether today falls between the first start date and the latest end date of this rental.
      * Extension rows are part of the span, so a rental is still running during its extension.
      */
-    public static function isRunningToday(Rental $rental): bool
+    public static function isActive(Rental $rental): bool
     {
         /** @var Rental $first */
         $first = self::rowsOf($rental)->sortBy(fn (Rental $row) => $row->start_date->timestamp)->first();
@@ -280,20 +363,5 @@ final class RentalService
             ->whereDate('start_date', '<=', $end->toDateString())
             ->whereDate('end_date', '>=', $start->toDateString())
             ->exists();
-    }
-
-    /**
-     * The garage types a vehicle type fits.
-     *
-     * @return list<string>
-     */
-    private static function garageTypesFor(string $vehicleType): array
-    {
-        return match ($vehicleType) {
-            Const_Type::VEHICLE_BICYCLE, Const_Type::VEHICLE_MOTORCYCLE => [Const_Type::GARAGE_BICYCLE],
-            Const_Type::VEHICLE_CAR => [Const_Type::GARAGE_CAR],
-            Const_Type::VEHICLE_ELECTRIC_CAR => [Const_Type::GARAGE_CAR, Const_Type::GARAGE_ELECTRIC_CAR],
-            default => [],
-        };
     }
 }

@@ -205,6 +205,48 @@ class ChargingTransactionServiceTest extends TestCase
         );
     }
 
+    public function test_preview_matches_create_and_saves_nothing(): void
+    {
+        $rental = $this->electricRental();
+
+        $preview = ChargingTransactionService::preview($rental, 2);
+
+        $this->assertSame(0, ChargingTransaction::count());
+        $this->assertSame(8.0, $preview['charged_kwh']);
+        $this->assertSame(2500.0, $preview['price_per_kwh']);
+        $this->assertSame(20000.0, $preview['amount']);
+
+        $saved = ChargingTransactionService::create($rental, 2, 'proofs/charge.jpg')->fresh();
+
+        $this->assertSame($preview['charged_kwh'], (float) $saved->charged_kwh);
+        $this->assertSame($preview['price_per_kwh'], (float) $saved->price_per_kwh);
+        $this->assertSame($preview['amount'], (float) $saved->amount);
+    }
+
+    public function test_preview_applies_the_same_rules_as_create(): void
+    {
+        $rental = $this->electricRental();
+
+        $this->assertRejected(
+            fn () => ChargingTransactionService::preview($rental, 10),
+            'Battery is already full.'
+        );
+        $this->assertRejected(
+            fn () => ChargingTransactionService::preview($rental, 11),
+            'Current capacity must be between 0 and 10 kW.'
+        );
+        $this->assertSame(0, ChargingTransaction::count());
+    }
+
+    public function test_create_still_requires_a_payment_proof(): void
+    {
+        $this->assertRejected(
+            fn () => ChargingTransactionService::create($this->electricRental(), 2, ''),
+            'Payment proof is required.'
+        );
+        $this->assertSame(0, ChargingTransaction::count());
+    }
+
     public function test_zero_current_capacity_charges_the_full_battery(): void
     {
         $transaction = ChargingTransactionService::create($this->electricRental(), 0, 'proofs/charge.jpg');

@@ -7,6 +7,9 @@ namespace App\Services;
 use App\Exceptions\GeneralException;
 use App\Models\Garage;
 use App\Utilities\Constants\Const_Type;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 
 final class GarageService
@@ -69,5 +72,51 @@ final class GarageService
         }
 
         return $garages;
+    }
+
+    /**
+     * The garage types a vehicle type fits.
+     *
+     * @return list<string>
+     */
+    public static function typesFor(string $vehicleType): array
+    {
+        return match ($vehicleType) {
+            Const_Type::VEHICLE_BICYCLE, Const_Type::VEHICLE_MOTORCYCLE => [Const_Type::GARAGE_BICYCLE],
+            Const_Type::VEHICLE_CAR => [Const_Type::GARAGE_CAR],
+            Const_Type::VEHICLE_ELECTRIC_CAR => [Const_Type::GARAGE_CAR, Const_Type::GARAGE_ELECTRIC_CAR],
+            default => [],
+        };
+    }
+
+    /**
+     * Garages of one type with no rental row (new or extension) overlapping the date range,
+     * ordered by code. Uses the same overlap rule as RentalService::create().
+     *
+     * @return EloquentCollection<int, Garage>
+     *
+     * @throws GeneralException
+     */
+    public static function availableFor(string $type, string|CarbonInterface $start, string|CarbonInterface $end): EloquentCollection
+    {
+        if (! in_array($type, Const_Type::GARAGE_TYPES, true)) {
+            throw new GeneralException('Garage type is not valid.');
+        }
+
+        $startDate = Carbon::parse($start)->startOfDay();
+        $endDate = Carbon::parse($end)->startOfDay();
+
+        if ($endDate->lt($startDate)) {
+            throw new GeneralException('End date cannot be before start date.');
+        }
+
+        return Garage::query()
+            ->where('type', $type)
+            ->whereDoesntHave('rentals', function ($query) use ($startDate, $endDate): void {
+                $query->whereDate('start_date', '<=', $endDate->toDateString())
+                    ->whereDate('end_date', '>=', $startDate->toDateString());
+            })
+            ->orderBy('code')
+            ->get();
     }
 }

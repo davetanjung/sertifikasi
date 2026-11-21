@@ -12,6 +12,7 @@ use App\Utilities\Constants\Const_Status;
 use App\Utilities\Constants\Const_Type;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class RentalServiceTest extends TestCase
@@ -388,21 +389,126 @@ class RentalServiceTest extends TestCase
         RentalService::extend($rental, '2026-11-15', 'proofs/ext.jpg');
     }
 
-    public function test_is_running_today_follows_the_start_and_latest_end_dates(): void
+    public function test_is_active_follows_the_start_and_latest_end_dates(): void
     {
         $rental = $this->rent($this->carGarage(), $this->carOf(), ['start_date' => '2026-11-12', 'days' => 2]); // 12 to 13
 
-        $this->assertFalse(RentalService::isRunningToday($rental));
+        $this->assertFalse(RentalService::isActive($rental));
 
         Carbon::setTestNow('2026-11-13 09:00:00');
-        $this->assertTrue(RentalService::isRunningToday($rental));
+        $this->assertTrue(RentalService::isActive($rental));
 
         RentalService::extend($rental, '2026-11-15', 'proofs/ext.jpg');
         Carbon::setTestNow('2026-11-15 09:00:00');
-        $this->assertTrue(RentalService::isRunningToday($rental));
+        $this->assertTrue(RentalService::isActive($rental));
 
         Carbon::setTestNow('2026-11-16 09:00:00');
-        $this->assertFalse(RentalService::isRunningToday($rental));
+        $this->assertFalse(RentalService::isActive($rental));
+    }
+
+    public function test_preview_matches_a_daily_create_and_saves_nothing(): void
+    {
+        $garage = $this->carGarage(100000);
+
+        $preview = RentalService::preview([
+            'garage_id' => $garage->id,
+            'rental_type' => Const_Type::RENTAL_DAILY,
+            'days' => 5,
+        ]);
+
+        $this->assertSame(0, Rental::count());
+
+        $rental = $this->rent($garage, $this->carOf(), ['days' => 5])->fresh();
+
+        $this->assertSame($rental->start_date->toDateString(), $preview['start_date']);
+        $this->assertSame($rental->end_date->toDateString(), $preview['end_date']);
+        $this->assertSame($rental->days, $preview['days']);
+        $this->assertSame((float) $rental->daily_price, $preview['daily_price']);
+        $this->assertSame((float) $rental->rent_amount, $preview['rent_amount']);
+        $this->assertSame(Const_Type::RENTAL_DAILY, $preview['rental_type']);
+    }
+
+    public function test_preview_matches_a_monthly_create_and_saves_nothing(): void
+    {
+        $garage = $this->carGarage(100000);
+
+        $preview = RentalService::preview([
+            'garage_id' => $garage->id,
+            'rental_type' => Const_Type::RENTAL_MONTHLY,
+            'start_date' => '2026-12-01',
+        ]);
+
+        $this->assertSame(0, Rental::count());
+
+        $rental = $this->rent($garage, $this->carOf(), [
+            'rental_type' => Const_Type::RENTAL_MONTHLY,
+            'start_date' => '2026-12-01',
+            'days' => null,
+        ])->fresh();
+
+        $this->assertSame('2026-12-31', $preview['end_date']);
+        $this->assertSame($rental->end_date->toDateString(), $preview['end_date']);
+        $this->assertSame(31, $preview['days']);
+        $this->assertSame((float) $rental->rent_amount, $preview['rent_amount']);
+        $this->assertSame(2500000.0, $preview['rent_amount']);
+    }
+
+    public function test_preview_rejects_a_bad_type_too_many_days_and_a_past_date(): void
+    {
+        $garage = $this->carGarage();
+
+        $this->assertRejected(fn () => RentalService::preview(['garage_id' => $garage->id, 'rental_type' => 'weekly']));
+        $this->assertRejected(fn () => RentalService::preview(['garage_id' => $garage->id, 'rental_type' => Const_Type::RENTAL_DAILY, 'days' => 30]));
+        $this->assertRejected(fn () => RentalService::preview(['garage_id' => $garage->id, 'rental_type' => Const_Type::RENTAL_DAILY, 'days' => 2, 'start_date' => '2026-11-09']));
+        $this->assertRejected(fn () => RentalService::preview(['garage_id' => 'missing', 'rental_type' => Const_Type::RENTAL_DAILY, 'days' => 2]));
+        $this->assertSame(0, Rental::count());
+    }
+
+    public function test_active_rentals_returns_the_new_row_once_with_relations_loaded(): void
+    {
+        $withExtensions = $this->rent(Garage::factory()->car()->create(['code' => 'C002']), $this->carOf(), ['days' => 3]); // 10 to 12 Nov
+        RentalService::extend($withExtensions, '2026-11-14', 'proofs/ext1.jpg');
+        RentalService::extend($withExtensions, '2026-11-16', 'proofs/ext2.jpg');
+        $plain = $this->rent(Garage::factory()->car()->create(['code' => 'C001']), $this->carOf(), ['days' => 2]);
+
+        // Only the extension row covers this day, the new row ended on the 12th.
+        Carbon::setTestNow('2026-11-14 09:00:00');
+        $running = RentalService::activeRentals();
+
+        $this->assertSame([$withExtensions->id], $running->pluck('id')->all());
+        $this->assertSame(Const_Status::NEW, $running->first()->status);
+        $this->assertTrue($running->first()->relationLoaded('garage'));
+        $this->assertTrue($running->first()->relationLoaded('vehicle'));
+        $this->assertTrue($running->first()->relationLoaded('user'));
+
+        Carbon::setTestNow('2026-11-11 09:00:00');
+        $this->assertSame(['C001', 'C002'], RentalService::activeRentals()->map(fn (Rental $rental) => $rental->garage->code)->all());
+        $this->assertContains($plain->id, RentalService::activeRentals()->pluck('id')->all());
+    }
+
+    public function test_active_rentals_excludes_ended_and_future_rentals(): void
+    {
+        $this->rent($this->carGarage(), $this->carOf(), ['days' => 2]); // 10 to 11 Nov
+        $this->rent($this->carGarage(), $this->carOf(), ['start_date' => '2026-11-20', 'days' => 2]);
+
+        Carbon::setTestNow('2026-11-15 09:00:00');
+
+        $this->assertCount(0, RentalService::activeRentals());
+
+        Carbon::setTestNow('2026-11-10 09:00:00');
+        $this->assertCount(1, RentalService::activeRentals());
+    }
+
+    public function test_active_rentals_uses_a_fixed_number_of_queries(): void
+    {
+        foreach (range(1, 4) as $unused) {
+            $this->rent($this->carGarage(), $this->carOf());
+        }
+
+        DB::enableQueryLog();
+        $this->assertCount(4, RentalService::activeRentals());
+
+        $this->assertLessThanOrEqual(4, count(DB::getQueryLog()));
     }
 
     /**

@@ -21,11 +21,49 @@ final class ChargingTransactionService
      */
     public static function create(Rental $rental, string|int|float $currentCapacityKw, string $paymentProofPath): ChargingTransaction
     {
+        $charge = self::calculate($rental, $currentCapacityKw);
+
+        if ($paymentProofPath === '') {
+            throw new GeneralException('Payment proof is required.');
+        }
+
+        return ChargingTransaction::create([
+            'rental_id' => $rental->id,
+            'current_capacity_kw' => (float) $currentCapacityKw,
+            'charged_kwh' => $charge['charged_kwh'],
+            'price_per_kwh' => $rental->garage->price_per_kwh,
+            'amount' => $charge['amount'],
+            'payment_proof_path' => $paymentProofPath,
+        ]);
+    }
+
+    /**
+     * Work out a charging session without saving anything and without a payment proof.
+     * Applies the same rules and messages as create().
+     *
+     * @return array{charged_kwh: float, price_per_kwh: float, amount: float}
+     *
+     * @throws GeneralException
+     */
+    public static function preview(Rental $rental, string|int|float $currentCapacityKw): array
+    {
+        return self::calculate($rental, $currentCapacityKw);
+    }
+
+    /**
+     * The rules and the math shared by create() and preview().
+     *
+     * @return array{charged_kwh: float, price_per_kwh: float, amount: float}
+     *
+     * @throws GeneralException
+     */
+    private static function calculate(Rental $rental, string|int|float $currentCapacityKw): array
+    {
         if ($rental->status !== Const_Status::NEW) {
             throw new GeneralException('Charging can only be added to the original rental, not an extension.');
         }
 
-        if (! RentalService::isRunningToday($rental)) {
+        if (! RentalService::isActive($rental)) {
             throw new GeneralException('The rental is not running today.');
         }
 
@@ -42,10 +80,6 @@ final class ChargingTransactionService
 
         if ($garage->price_per_kwh === null) {
             throw new GeneralException('The garage has no price per kWh.');
-        }
-
-        if ($paymentProofPath === '') {
-            throw new GeneralException('Payment proof is required.');
         }
 
         if (! is_numeric($currentCapacityKw)) {
@@ -65,13 +99,10 @@ final class ChargingTransactionService
             throw new GeneralException('Battery is already full.');
         }
 
-        return ChargingTransaction::create([
-            'rental_id' => $rental->id,
-            'current_capacity_kw' => $current,
+        return [
             'charged_kwh' => $chargedKwh,
-            'price_per_kwh' => $garage->price_per_kwh,
+            'price_per_kwh' => (float) $garage->price_per_kwh,
             'amount' => round($chargedKwh * (float) $garage->price_per_kwh, 2),
-            'payment_proof_path' => $paymentProofPath,
-        ]);
+        ];
     }
 }
