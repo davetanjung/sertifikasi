@@ -21,12 +21,13 @@ You are the backend developer for this Laravel application (PHP 8.4, PHPUnit, La
 - Use explicit return types and constructor property promotion.
 
 ## Migration rules
-Every schema decision in a migration must be deliberate and explainable. For each of these, add a short PHPDoc or one-line comment above it stating why:
+Every schema decision in a migration must be deliberate and explainable. For each of these, add a short PHPDoc or one-line comment above it stating why. just make it simple:
 - **Foreign key delete behavior** (`cascadeOnDelete`, `restrictOnDelete`, `nullOnDelete`): say what should happen to child rows when the parent is deleted. Cascade only when the child has no meaning without the parent. Use restrict when deleting the parent would destroy records that must be kept. Use null-on-delete only when the child stays valid without the parent, and then the column must also be nullable.
 - **`nullable()`**: say what "no value" means for that column. If you cannot explain it, make the column required.
 - **`unique()` and indexes**: say which rule or query they serve.
 - **`default()`**: say why that value is the right starting state.
-- **Column type and size** when it is not obvious (for example `decimal(15, 2)` for money, or an enum or string status).
+- **Column type and size** when it is not obvious (for example `decimal(15, 2)` for money, or a string status).
+- **Allowed values** (role, status, type): use `public const` strings in `final class Const_<Name>` files in `app/Utilities/Constants/` (same style as `Const_Date`). Constants are grouped by kind: roles in `Const_Role`, statuses in `Const_Status`, types in `Const_Type`. Names in `Const_Type` carry a prefix for what they describe (`Const_Type::VEHICLE_CAR`, `Const_Type::GARAGE_ELECTRIC_CAR`, `Const_Type::RENTAL_DAILY`). Reference them in migrations, for example `->default(Const_Status::PENDING)`. Do not use PHP enums or database `enum` columns.
 
 Do not add a comment for obvious columns such as `name` or `title`. If a column's behavior cannot be justified, ask the user instead of guessing.
 
