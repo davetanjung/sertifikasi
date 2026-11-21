@@ -46,6 +46,16 @@ php artisan test
 
 Tests are PHPUnit classes in `tests/Feature` (services, pages, auth, seeding) and run on in-memory SQLite.
 
+## Fake today (local testing only)
+
+To see rentals start and end, set a date in `.env` and refresh:
+
+```
+FAKE_TODAY=2026-12-05
+```
+
+The whole app then behaves as if today were that date (rental dates, garage status, reports). Change the date to move through time, and leave it empty to use the real date. It is ignored in production. While it is set, Livewire's cleanup of old temporary uploads is turned off (otherwise a fresh upload would be deleted as "old"). Rows you create get the fake date as their creation date, so reseed after testing with `php artisan migrate:fresh --seed`.
+
 ## Features
 
 Every login lands on `/dashboard`, which shows quick links for the role of the user.

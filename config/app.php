@@ -41,6 +41,9 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
+    // LOCAL TESTING ONLY: a date (YYYY-MM-DD) the app pretends is today. Empty = the real date. Ignored in production.
+    'fake_today' => env('FAKE_TODAY'),
+
     /*
     |--------------------------------------------------------------------------
     | Application URL
