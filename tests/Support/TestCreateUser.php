@@ -21,6 +21,10 @@ class TestCreateUser extends Component
 
     public $email;
 
+    public $nik;
+
+    public $phone;
+
     protected function submitRedirectUrl(): ?string
     {
         return '/';
@@ -41,6 +45,8 @@ class TestCreateUser extends Component
         return [
             'name' => ['required', 'string'],
             'email' => ['required', 'email', 'unique:users,email'],
+            'nik' => ['required', 'digits:16', 'unique:users,nik'],
+            'phone' => ['required', 'string', 'max:20'],
         ];
     }
 }

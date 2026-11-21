@@ -20,6 +20,8 @@ class LivewireTraitsTest extends TestCase
         Livewire::test(TestCreateUser::class)
             ->set('name', 'Dave')
             ->set('email', 'dave@example.com')
+            ->set('nik', '3201010101010001')
+            ->set('phone', '081234567890')
             ->call('submitAndBackToIndex')
             ->assertHasNoErrors()
             ->assertRedirect('/');
@@ -51,6 +53,8 @@ class LivewireTraitsTest extends TestCase
         Livewire::test($component::class)
             ->set('name', 'Dave')
             ->set('email', 'dave@example.com')
+            ->set('nik', '3201010101010001')
+            ->set('phone', '081234567890')
             ->call('submitDefault')
             ->assertHasErrors('flash_danger');
 
