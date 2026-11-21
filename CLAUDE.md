@@ -149,7 +149,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 # Garage Rental App
 
-A web app (Laravel 13, Livewire 4, Tailwind 4, PHPUnit) for a company that rents vehicle garages by the day or month. The full spec is `docs/requirements.md` (Indonesian) and the agreed schema is `docs/erd.md`. When they disagree with this file, the docs win. Read them before changing domain logic.
+A web app (Laravel 13, Livewire 4, Tailwind 4, PHPUnit) for a company that rents vehicle garages by the day or month. The full spec is `docs/requirements.md` (Indonesian) and the agreed schema is `docs/erd.md`, with its table notes, delete behavior and constants in the "ERD notes" section of `.claude/agents/backend.md`. When they disagree with this file, the docs win. Read them before changing domain logic.
 
 ## Roles
 - **Admin**: created by a seeder only, never self-registered. Creates garages in batches, verifies new tenants, extends rentals, uploads extension payment proof, and sees reports.
