@@ -5,7 +5,7 @@
 <div>
     <x-flash />
 
-    <x-page-header title="New rental" subtitle="Choose a vehicle, the dates and a free garage." />
+    <x-page-header title="Rent a garage" subtitle="Choose a vehicle, the dates and a free garage." />
 
     <form wire:submit="submitDefault" class="grid items-start gap-6 lg:grid-cols-3" novalidate>
         <div class="space-y-6 lg:col-span-2">
@@ -143,7 +143,7 @@
                 >
                     Cancel
                 </a>
-                <x-button wire:loading.attr="disabled">Save rental</x-button>
+                <x-button wire:loading.attr="disabled">Rent now</x-button>
             </div>
         </div>
 
@@ -169,7 +169,7 @@
                         </div>
                     </dl>
                     @if ($preview['rental_type'] === Const_Type::RENTAL_MONTHLY)
-                        <p class="mt-3 text-xs text-neutral-600">Monthly rate = 25 x daily price.</p>
+                        <p class="mt-3 text-xs text-neutral-600">Rent for the whole month and pay for only 25 days.</p>
                     @endif
                     <div class="mt-5 rounded-md border border-black bg-white p-4">
                         <p class="text-xs font-medium uppercase tracking-wide text-black">Total to pay</p>

@@ -4,7 +4,9 @@ namespace App\Models;
 
 use App\Traits\HasAutoNumber;
 use App\Traits\HasCoreFeature;
+use App\Utilities\Constants\Const_Status;
 use App\Utilities\Constants\Const_Type;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use InvalidArgumentException;
@@ -78,6 +80,28 @@ class Garage extends Model
     public function rentals(): HasMany
     {
         return $this->hasMany(Rental::class);
+    }
+
+    /**
+     * Computed status: used when a rental row (new or extension) covers today, otherwise available.
+     * Reuses the used_today attribute when the query loaded it (withExists), else runs one query.
+     *
+     * @return Attribute<string, never>
+     */
+    protected function status(): Attribute
+    {
+        return Attribute::make(
+            get: function (): string {
+                $isUsed = array_key_exists('used_today', $this->attributes)
+                    ? (bool) $this->attributes['used_today']
+                    : $this->rentals()
+                        ->whereDate('start_date', '<=', today())
+                        ->whereDate('end_date', '>=', today())
+                        ->exists();
+
+                return $isUsed ? Const_Status::USED : Const_Status::AVAILABLE;
+            },
+        );
     }
 
     /**

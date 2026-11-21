@@ -27,6 +27,7 @@ final class Show extends Component
     public function render(): View
     {
         return view('garage.show', [
+            'status' => $this->obj->status,
             'usedToday' => $this->obj->rentals()
                 ->whereDate('start_date', '<=', today())
                 ->whereDate('end_date', '>=', today())

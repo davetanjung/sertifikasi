@@ -18,7 +18,7 @@
 
                     <div>
                         <x-form.input label="Daily price (Rp)" name="daily_price" type="number" min="0" step="0.01" inputmode="decimal" wire:model="daily_price" />
-                        <p class="mt-1.5 text-xs text-neutral-600">Monthly price is always 25 x the daily price.</p>
+                        <p class="mt-1.5 text-xs text-neutral-600">A monthly rental costs the same as 25 days at this price.</p>
                     </div>
 
                     @if ($type === Const_Type::GARAGE_ELECTRIC_CAR)

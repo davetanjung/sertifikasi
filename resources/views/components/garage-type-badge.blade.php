@@ -1,12 +1,4 @@
 @props(['type', 'label' => null])
 
-@php
-    $color = match ($type) {
-        \App\Utilities\Constants\Const_Type::GARAGE_BICYCLE => 'slate',
-        \App\Utilities\Constants\Const_Type::GARAGE_CAR => 'indigo',
-        \App\Utilities\Constants\Const_Type::GARAGE_ELECTRIC_CAR => 'black',
-        default => 'slate',
-    };
-@endphp
-
-<x-badge :color="$color" {{ $attributes }}>{{ $label ?? str($type)->replace('_', ' ')->ucfirst() }}</x-badge>
+{{-- Every type uses the same outlined badge: the type is told by its text, not by a style. --}}
+<x-badge color="indigo" {{ $attributes }}>{{ $label ?? str($type)->replace('_', ' ')->ucfirst() }}</x-badge>

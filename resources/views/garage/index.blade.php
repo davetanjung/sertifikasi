@@ -1,7 +1,7 @@
 <div>
     <x-flash />
 
-    <x-page-header title="Garages" subtitle="All garages, their prices and whether they are used today.">
+    <x-page-header title="Garages" subtitle="This is the page of all garages and their status.">
         <x-slot:actions>
             <a
                 href="{{ route('garage.create') }}"
@@ -28,7 +28,7 @@
             </div>
         </div>
         <x-form.select label="Type" name="type" :options="$typeOptions" placeholder="All types" wire:model.live.debounce.300ms="type" />
-        <x-form.select label="Availability" name="availability" :options="$availabilityOptions" placeholder="All" wire:model.live.debounce.300ms="availability" />
+        <x-form.select label="Status" name="availability" :options="$availabilityOptions" placeholder="All statuses" wire:model.live.debounce.300ms="availability" />
     </div>
 
     <x-table>
@@ -36,9 +36,9 @@
             <th scope="col" class="w-12 px-4 py-3">No</th>
             <x-sortable-th label="Code" field="code" :sortField="$sortField" :sortAsc="$sortAsc" />
             <x-sortable-th label="Type" field="type" :sortField="$sortField" :sortAsc="$sortAsc" />
-            <x-sortable-th label="Daily price" field="daily_price" :sortField="$sortField" :sortAsc="$sortAsc" class="text-right" title="Monthly = 25 x daily" />
+            <x-sortable-th label="Daily price" field="daily_price" :sortField="$sortField" :sortAsc="$sortAsc" class="text-right" title="A monthly rental costs the same as 25 days" />
             <th scope="col" class="px-4 py-3 text-right">Price per kWh</th>
-            <th scope="col" class="px-4 py-3">Status</th>
+            <th scope="col" class="px-4 py-3" title="A garage is used when a rental covers today.">Status</th>
             <th scope="col" class="px-4 py-3 text-right">Action</th>
         </x-slot:head>
 
@@ -58,10 +58,10 @@
                     @endif
                 </td>
                 <td class="px-4 py-3">
-                    @if ($garage->used_today)
-                        <x-badge color="amber">Used today</x-badge>
-                    @else
-                        <x-badge color="green">Free today</x-badge>
+                    @if ($garage->status === \App\Utilities\Constants\Const_Status::USED)
+                        <x-badge color="black">Used</x-badge>
+                    @elseif ($garage->status === \App\Utilities\Constants\Const_Status::AVAILABLE)
+                        <x-badge color="green">Available</x-badge>
                     @endif
                 </td>
                 <td class="whitespace-nowrap px-4 py-3 text-right">
@@ -84,7 +84,8 @@
         @endforelse
     </x-table>
 
-    <p class="mt-3 text-xs text-neutral-600">The monthly price is always 25 x the daily price.</p>
+    <p class="mt-3 text-xs text-neutral-600">A monthly rental costs the same as 25 days.</p>
+    <p class="mt-1 text-xs text-neutral-600">Status is worked out from the rental dates: a garage is used when a rental covers today.</p>
 
     <div class="mt-4">
         {{ $data->links() }}

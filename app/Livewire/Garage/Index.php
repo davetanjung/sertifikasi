@@ -6,6 +6,7 @@ namespace App\Livewire\Garage;
 
 use App\Models\Garage;
 use App\Traits\Livewire\WithIndexForm;
+use App\Utilities\Constants\Const_Status;
 use App\Utilities\Constants\Const_Type;
 use Illuminate\Contracts\View\View;
 use Livewire\Component;
@@ -23,7 +24,7 @@ final class Index extends Component
     public $type;
 
     /**
-     * '' (all), 'free' or 'used' (used today or not).
+     * '' (all), Const_Status::AVAILABLE or Const_Status::USED (computed from today's rentals).
      */
     public $availability = '';
 
@@ -47,8 +48,8 @@ final class Index extends Component
                 Const_Type::GARAGE_ELECTRIC_CAR => 'Electric car',
             ],
             'availabilityOptions' => [
-                'free' => 'Free today',
-                'used' => 'Used today',
+                Const_Status::AVAILABLE => 'Available',
+                Const_Status::USED => 'Used',
             ],
         ])->layout($this->layout);
     }
@@ -66,10 +67,10 @@ final class Index extends Component
             ->when($this->type, function ($query) {
                 return $query->where('type', $this->type);
             })
-            ->when($this->availability === 'used', function ($query) use ($coversToday) {
+            ->when($this->availability === Const_Status::USED, function ($query) use ($coversToday) {
                 return $query->whereHas('rentals', $coversToday);
             })
-            ->when($this->availability === 'free', function ($query) use ($coversToday) {
+            ->when($this->availability === Const_Status::AVAILABLE, function ($query) use ($coversToday) {
                 return $query->whereDoesntHave('rentals', $coversToday);
             });
     }

@@ -1,6 +1,4 @@
 @php
-    use App\Utilities\Constants\Const_Type;
-
     $statusColors = ['upcoming' => 'blue', 'running' => 'green', 'ended' => 'slate'];
     $isAdmin = auth()->user()->isAdmin();
 @endphp
@@ -16,7 +14,7 @@
                     class="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                 >
                     <x-icon name="plus" class="size-4" />
-                    New rental
+                    Rent a garage
                 </a>
             @endunless
         </x-slot:actions>
@@ -69,7 +67,7 @@
                 </td>
                 <td class="whitespace-nowrap px-4 py-3">{{ $rental->garage?->code }}</td>
                 <td class="whitespace-nowrap px-4 py-3">{{ $rental->vehicle?->plate_number ?: trim(($rental->vehicle?->type ? str($rental->vehicle->type)->replace('_', ' ')->ucfirst() : '').' '.$rental->vehicle?->brand) }}</td>
-                <td class="px-4 py-3"><x-badge :color="$rental->rental_type === Const_Type::RENTAL_MONTHLY ? 'indigo' : 'amber'">{{ $rentalTypeOptions[$rental->rental_type] ?? $rental->rental_type }}</x-badge></td>
+                <td class="px-4 py-3"><x-badge color="indigo">{{ $rentalTypeOptions[$rental->rental_type] ?? $rental->rental_type }}</x-badge></td>
                 <td class="whitespace-nowrap px-4 py-3">{{ _date_format_output($rental->start_date) }}</td>
                 <td class="whitespace-nowrap px-4 py-3">{{ _date_format_output($rental->latest_end_date) }}</td>
                 <td class="px-4 py-3"><x-badge :color="$statusColors[$rental->period_status] ?? 'slate'">{{ $periodOptions[$rental->period_status] ?? $rental->period_status }}</x-badge></td>

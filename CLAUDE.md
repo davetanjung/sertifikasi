@@ -149,44 +149,59 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 # Garage Rental App
 
-A web app (Laravel 13, Livewire 4, Tailwind 4, PHPUnit) for a company that rents vehicle garages by the day or month. The full spec is `docs/requirements.md` (Indonesian) and the agreed schema is `docs/erd.md`, with its table notes, delete behavior and constants in the "ERD notes" section of `.claude/agents/backend.md`. When they disagree with this file, the docs win. Read them before changing domain logic.
+A web app (Laravel 13, Livewire 4, Tailwind 4, Vite, PHPUnit) for a company that rents vehicle garages by the day or month. The full spec is `docs/requirements.md` (Indonesian) and the agreed schema is `docs/erd.md`, with its table notes, delete behavior and constants in the "ERD notes" section of `.claude/agents/backend.md`. When they disagree with this file, the docs win. Read them before changing domain logic.
+
+Run with `composer run dev`. `php artisan migrate:fresh --seed` rebuilds the demo data (admin `admin@test`, tenants `tenant1@test.com` to `tenant10@test.com`, all passwords `12345678`). `php artisan storage:link` is needed to show uploaded payment proofs (public disk). The default DB in `.env.example` is sqlite (MySQL also works); tests use in-memory SQLite.
 
 ## Roles
-- **Admin**: created by a seeder only, never self-registered. Creates garages in batches, verifies new tenants, extends rentals, uploads extension payment proof, and sees reports.
-- **Tenant (Penyewa)**: self-registers (NIK, name, phone, email as username, password). Status is `pending`, `approved` or `rejected`. Only `approved` tenants can log in.
+- **Admin**: created only by `AdminSeeder` (`admin@test`), never self-registered. Creates garages in batches, approves or rejects tenants, extends rentals (uploads the proof), and sees reports. Admin pages: user, garage, extension, report. Admin can also view vehicles, rentals and charging transactions, but cannot create them.
+- **Tenant (Penyewa)**: self-registers (NIK 16 digits, name, phone, email as username, password). Status is `pending` (start), `approved` or `rejected`. Only `approved` tenants can log in; after a correct password, login shows a separate message for pending and rejected. There is no login throttling. A tenant sees only their own records.
+- `/` redirects to `/dashboard` and every login lands there. The dashboard is role-aware (admin quick links, tenant quick links).
 
 ## Garage and vehicle rules
-- Garage types: bicycle (code `S001`), car (`C001`), electric car (`E001`). The number is sequential per type, maximum 999. A batch that would pass 999 is rejected entirely and nothing is created.
-- Bicycles and motorcycles only fit bicycle garages. Cars only fit car garages. Electric cars fit car or electric garages.
-- Plate number is required for every vehicle type except bicycle.
-- `daily_price` lives on each garage and is set per batch. Monthly price is always 25 x the daily price.
+- Garage types: bicycle (code `S001`), car (`C001`), electric car (`E001`). The number is sequential per type (highest existing + 1, no counter table), maximum 999, and lives only in `code`. A batch that would pass 999 is rejected entirely and nothing is created.
+- `daily_price` is set per batch and stored on each garage. Electric garages also have `price_per_kwh`. Monthly price is always 25 x the daily price.
+- Vehicle types: bicycle, motorcycle, car, electric car. Plate is unique and required except for bicycles. An electric car has `maximum_capacity_kw`, entered by the tenant.
+- Fit: bicycles and motorcycles only in bicycle garages, cars only in car garages, electric cars in car or electric garages (`GarageService::typesFor()`).
+- Garage status is `used` or `available` (`Const_Status::USED` / `AVAILABLE`, the `Garage::status` accessor): never stored, computed from the rental rows (used when one covers today). Availability for given dates is computed from date overlap (`GarageService::whereFree()`). A vehicle cannot be in two garages on overlapping dates. The rental form lists only free garages (search by code, limited list with "show more").
 
 ## Rental rules
-- Payment is always upfront. The tenant uploads the payment proof, and it is stored for reference only (no admin confirmation).
-- Start date defaults to today and the tenant may choose a later date. Availability is computed from date overlap. There is no stored "used" status, and a garage is free again the day after the end date.
-- Daily rental maximum is (days in the start month - 1). A monthly rental is exactly one month long, counted from the start date.
+- Payment is upfront for the rent only. The tenant uploads a proof image (max 2 MB), stored for reference (no admin confirmation).
+- Start date defaults to today, a later date (booking) is allowed, never a past one. A garage is free again the day after the end date.
+- Daily maximum is (days in the start month - 1). A monthly rental is one month long (the days of the start month). End date = start date + days - 1.
 - A tenant can rent several garages at once.
-- Rentals copy the prices and charging numbers they used, so changing prices or settings later never changes an old invoice.
-
-## Electric car charging
-- Applies only to an electric car in an electric garage. An electric car in a normal car garage has no charging fee.
-- The tenant enters the current battery in kW (not a percentage) once, when renting.
-- Charging amount = (max kW - current kW) x price per kWh. Example: max 10, current 2, so 8 x price.
-- Price per kWh, max kW and charging speed (1 kW/hour) are one global row in `charging_settings`, edited by admin in the app. Speed is only used to show estimated charging time.
-- The invoice shows rent and charging as two separate amounts.
+- Code format `RNT-YYYYMMDD-NNNN`. The rental copies the daily price, so changing prices later never changes an old invoice.
+- `RentalService::create()` and `extend()` run in a transaction with row locks on the garage and the vehicle, so overlapping bookings cannot slip through.
 
 ## Extensions
-- Only admin extends, only the end date changes, and it can only be moved later, never earlier. There is no maximum number of days.
-- Extra cost = added days x the rental's daily price, for daily and monthly rentals.
-- An extension is blocked if it overlaps the next booking on the same garage.
-- Admin uploads the payment proof. Each extension is stored in `rental_extensions`, and `rentals.end_date` always holds the latest end date.
+- Admin only. An extension is a new row in `rentals` with `status = extension` and the SAME `code` as the original, starting the day after the previous end date. There is no parent id and no `rental_extensions` table: rows are matched by code (+ user and garage).
+- Only the end date changes, only to a later date, and not after the rental has ended. It is blocked if it overlaps another booking of the garage or the vehicle.
+- Cost = added days x the rental's daily price (also for monthly rentals). The admin uploads the proof.
+
+## Electric car charging
+- A separate table `charging_transactions`, linked to the `new` rental row. Once the rental is running, the tenant can add as many transactions as wanted, each with its own proof (`ChargingTransactionService`).
+- Allowed only when the rental is active today (extensions count), the garage is electric (has `price_per_kwh`) and the vehicle is an electric car with a maximum capacity. An electric car in a normal car garage has no charging.
+- The tenant enters the current battery in kW (not a percentage, 0 to the maximum). Charged kWh = max - current. Amount = charged kWh x the garage `price_per_kwh`, copied into the transaction. A full battery is rejected.
+- There is no charging speed, no `charging_settings` table, and nothing is paid for charging at rental time.
 
 ## Reports
-Per month in a year, per day in a month, per garage type and per tenant. Each shows the number of rentals and total income (rent, charging and extensions).
+Admin only (`ReportService`). Per month in a year, per day in a month, per garage type and per tenant, with filters (year, month, garage type, tenant). Each row has the number of rentals (only `new` rows count), rent income (`rent_amount` of `new` and `extension` rows, grouped by start date), charging income (grouped by the date recorded) and the total. The first year is 2026.
 
 ## Conventions specific to this project
-- All table ids and foreign keys are UUIDs (`uuid('id')->primary()`, `foreignUuid`). Models need the `HasUuids` trait.
-- Allowed values (role, status, type) are `public const` strings in `final class Const_<Name>` files in `app/Utilities/Constants/` (same style as `Const_Date`). Constants are grouped by kind: roles in `Const_Role`, statuses in `Const_Status`, types in `Const_Type`. Names in `Const_Type` carry a prefix for what they describe, for example `Const_Type::VEHICLE_CAR`, `Const_Type::GARAGE_ELECTRIC_CAR` and `Const_Type::RENTAL_DAILY`. Do not use PHP enums or database `enum` columns. Columns are plain strings, and migrations and code reference the constants. A default in a migration is fine when it has a reason, for example `->default(Const_Status::PENDING)`.
-- Every migration decision (foreign key delete behavior, `nullable`, `unique`, `default`, non-obvious column types) needs a short comment saying why. See "Migration rules" in `.claude/agents/backend.md`.
-- Tests are PHPUnit classes (`php artisan make:test`, `--unit` for unit tests). Pest is not installed.
+- **Pages**: no controllers. Every page is a Livewire component (Index, Create, Show; no Edit and no delete anywhere) in `app/Livewire/<Module>/`, using the traits in `App\Traits\Livewire`. Routes are at the root (`garage.index`, `rental.create`, ...) in `routes/web.php`; logout is a route closure. Middleware aliases: `admin` and `approved`. Pages that are role-specific also guard themselves in `mount()` with `abort_unless`/`abort_if`.
+- **Validation**: field rules (required, format, ranges, upload) are in the component's `rules()`. Services in `app/Services` (static classes: `AuthService`, `UserService`, `VehicleService`, `GarageService`, `RentalService`, `ChargingTransactionService`, `ReportService`) hold saving and cross-record rules (availability, fit, 999 limit, extensions, charging) and throw `GeneralException`.
+- **Previews**: pages never calculate prices; they show what the services return (`RentalService::preview()`, `previewExtension()`, `ChargingTransactionService::preview()`, `GarageService::nextCodes()`).
+- **Uploads**: stored on the `public` disk by the component (`payment-proofs`, `extension-proofs`, `charging-proofs`); the component deletes the file when the service throws.
+- **Data**: all ids are UUIDs (`uuid('id')->primary()`, `foreignUuid`). Models use `HasCoreFeature` (UUIDs, factory, route and permission helpers, keyword search); Garage and Rental also use `HasAutoNumber` for `code`. Seeders must not use `WithoutModelEvents`, because the codes are made in a creating event.
+- **Constants**: allowed values (role, status, type) are `public const` strings in `final class Const_<Name>` files in `app/Utilities/Constants/` (same style as `Const_Date`). Roles in `Const_Role`, statuses in `Const_Status`, types in `Const_Type` (prefixes `VEHICLE_`, `GARAGE_`, `RENTAL_`). Do not use PHP enums or database `enum` columns. Columns are plain strings, and migrations and code reference the constants.
+- **Migrations**: every decision (foreign key delete behavior, `nullable`, `unique`, `default`, non-obvious column types) needs a short comment saying why. See "Migration rules" in `.claude/agents/backend.md`.
+- **Seeders**: `AdminSeeder`, `TenantSeeder`, `VehicleSeeder`, `GarageSeeder`, `RentalSeeder`, run in that order by `DatabaseSeeder`. They go through the services, so demo data follows the real rules.
+- **UI** (details in `.claude/agents/fe-design.md`): monochrome (white, black, neutral grays); dark green (800/900) and dark red (800/900) only for statuses and errors; no gradients or shadows. Black sidebar, white top bar with a user dropdown (Logout). Layouts `components.layouts.app` and `components.layouts.auth`. Reuse the shared Blade components in `resources/views/components` before creating new ones. All page text is in English.
+- **Tests**: PHPUnit classes in `tests/Feature` (services, pages, auth, seeding), about 340 tests. Run `php artisan test`. Pest is not installed.
 - Use the project's subagents in `.claude/agents` (`backend`, `fe-design`, `software-architecture`) when the task matches their scope.
+
+## Where things live
+- `routes/web.php`, `bootstrap/app.php` (middleware aliases), `app/Http/Middleware/` (`EnsureUserIsAdmin`, `EnsureUserIsApproved`)
+- `app/Livewire/`, `resources/views/<module>/`, `resources/views/components/`
+- `app/Services/`, `app/Models/`, `app/Traits/` (+ `Traits/Livewire`), `app/Utilities/` (`Constants/`, `helpers.php`)
+- `database/migrations`, `database/seeders`, `docs/`

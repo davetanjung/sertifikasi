@@ -17,6 +17,7 @@ use App\Utilities\Constants\Const_Status;
 use App\Utilities\Constants\Const_Type;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -182,9 +183,9 @@ class GaragePagesTest extends TestCase
 
         $component = Livewire::actingAs($this->admin())->test(Index::class);
 
-        $component->set('availability', 'used')
+        $component->set('availability', Const_Status::USED)
             ->assertViewHas('data', fn ($data) => $data->pluck('id')->all() === [$used->id]);
-        $component->set('availability', 'free')
+        $component->set('availability', Const_Status::AVAILABLE)
             ->assertViewHas('data', fn ($data) => $data->pluck('id')->all() === [$free->id]);
         $component->set('availability', '')
             ->assertViewHas('data', fn ($data) => $data->total() === 2);
@@ -195,7 +196,67 @@ class GaragePagesTest extends TestCase
         Livewire::actingAs($this->admin())
             ->test(Index::class)
             ->assertViewHas('typeOptions', fn ($options) => array_keys($options) === Const_Type::GARAGE_TYPES)
-            ->assertViewHas('availabilityOptions', fn ($options) => array_keys($options) === ['free', 'used']);
+            ->assertViewHas('availabilityOptions', fn ($options) => $options === [
+                Const_Status::AVAILABLE => 'Available',
+                Const_Status::USED => 'Used',
+            ]);
+    }
+
+    public function test_the_status_accessor_is_computed_from_the_rental_dates(): void
+    {
+        $new = Garage::factory()->car()->create();
+        $extended = Garage::factory()->car()->create();
+        $ended = Garage::factory()->car()->create();
+        $future = Garage::factory()->car()->create();
+        $none = Garage::factory()->car()->create();
+
+        // Book in the past (7 to 9 Nov), the service refuses past start dates.
+        Carbon::setTestNow('2026-11-07 09:00:00');
+        $this->rent($ended);
+        $rental = $this->rent($extended);
+        RentalService::extend($rental, '2026-11-12', 'payment-proofs/ext.jpg'); // extension row 10 to 12 Nov
+
+        Carbon::setTestNow('2026-11-10 09:00:00');
+        $this->rent($new); // 10 to 12 Nov
+        $this->rent($future, ['start_date' => '2026-11-11']);
+
+        $this->assertSame(Const_Status::USED, $new->fresh()->status);
+        $this->assertSame(Const_Status::USED, $extended->fresh()->status);
+        $this->assertSame(Const_Status::AVAILABLE, $ended->fresh()->status);
+        $this->assertSame(Const_Status::AVAILABLE, $future->fresh()->status);
+        $this->assertSame(Const_Status::AVAILABLE, $none->fresh()->status);
+    }
+
+    public function test_the_status_accessor_does_not_add_queries_per_row_on_the_index(): void
+    {
+        Garage::factory()->car()->count(3)->create();
+        $this->rent(Garage::first());
+
+        $countQueries = function (): int {
+            $count = 0;
+
+            Livewire::actingAs($this->admin())
+                ->test(Index::class)
+                ->assertViewHas('data', function ($data) use (&$count) {
+                    DB::flushQueryLog();
+                    DB::enableQueryLog();
+                    $data->getCollection()->each(fn ($garage) => $garage->status);
+                    $count = count(DB::getQueryLog());
+                    DB::disableQueryLog();
+
+                    return true;
+                });
+
+            return $count;
+        };
+
+        $withThree = $countQueries();
+
+        Garage::factory()->car()->count(17)->create();
+
+        $this->assertSame(20, Garage::count());
+        $this->assertSame($withThree, $countQueries());
+        $this->assertSame(0, $withThree);
     }
 
     // ------------------------------------------------------- Create
@@ -364,10 +425,12 @@ class GaragePagesTest extends TestCase
 
         Livewire::actingAs($this->admin())
             ->test(Show::class, ['obj' => $used])
-            ->assertViewHas('usedToday', true);
+            ->assertViewHas('usedToday', true)
+            ->assertViewHas('status', Const_Status::USED);
         Livewire::actingAs($this->admin())
             ->test(Show::class, ['obj' => $free])
-            ->assertViewHas('usedToday', false);
+            ->assertViewHas('usedToday', false)
+            ->assertViewHas('status', Const_Status::AVAILABLE);
 
         Carbon::setTestNow('2026-11-13 09:00:00');
 

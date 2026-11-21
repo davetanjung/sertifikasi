@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('code');
             $table->unique(['code', 'start_date']);
             $table->string('status')->default(Const_Status::NEW);
-            $table->string('rental_type'); // new atau extension.
+            $table->string('rental_type'); // daily atau monthly (Const_Type::RENTAL_*). Extension row copy dari rental awal.
             $table->date('start_date')->index();
             $table->date('end_date')->index();
             $table->unsignedSmallInteger('days'); // gamungkin negative, pakai unsigned

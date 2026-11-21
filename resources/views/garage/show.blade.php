@@ -39,12 +39,12 @@
                     </div>
                 @endif
                 <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-neutral-600">Today</dt>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-neutral-600">Status</dt>
                     <dd class="mt-1.5">
-                        @if ($usedToday)
-                            <x-badge color="amber">Used today</x-badge>
-                        @else
-                            <x-badge color="green">Free today</x-badge>
+                        @if ($status === Const_Status::USED)
+                            <x-badge color="black">Used</x-badge>
+                        @elseif ($status === Const_Status::AVAILABLE)
+                            <x-badge color="green">Available</x-badge>
                         @endif
                     </dd>
                 </div>
@@ -53,7 +53,7 @@
                     <dd class="mt-1.5 text-sm text-black">{{ _date_format_output($obj->created_at) }}</dd>
                 </div>
             </dl>
-            <p class="mt-5 text-xs text-neutral-600">The monthly price is always 25 x the daily price.</p>
+            <p class="mt-5 text-xs text-neutral-600">A monthly rental costs the same as 25 days.</p>
         </x-card>
 
         <section>

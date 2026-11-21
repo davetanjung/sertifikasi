@@ -1,5 +1,4 @@
 @php
-    use App\Utilities\Constants\Const_Type;
     use Illuminate\Support\Facades\Route;
     use Illuminate\Support\Facades\Storage;
 
@@ -58,7 +57,7 @@
                     @endif
                     <div>
                         <dt class="{{ $labelClass }}">Rental type</dt>
-                        <dd class="mt-1.5"><x-badge :color="$obj->rental_type === Const_Type::RENTAL_MONTHLY ? 'indigo' : 'amber'">{{ str($obj->rental_type)->ucfirst() }}</x-badge></dd>
+                        <dd class="mt-1.5"><x-badge color="indigo">{{ str($obj->rental_type)->ucfirst() }}</x-badge></dd>
                     </div>
                     <div>
                         <dt class="{{ $labelClass }}">Start date</dt>
