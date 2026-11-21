@@ -22,6 +22,17 @@ final class Const_Type
 
     public const GARAGE_ELECTRIC_CAR = 'electric_car';
 
+    /**
+     * All valid garage types.
+     *
+     * @var list<string>
+     */
+    public const GARAGE_TYPES = [
+        self::GARAGE_BICYCLE,
+        self::GARAGE_CAR,
+        self::GARAGE_ELECTRIC_CAR,
+    ];
+
     // rental type
     public const RENTAL_DAILY = 'daily';
 
