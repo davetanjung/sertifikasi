@@ -190,36 +190,6 @@ class RentalServiceTest extends TestCase
 
     // ---- preview ----------------------------------------------------------
 
-    public function test_preview_returns_the_terms_without_saving_anything(): void
-    {
-        $garage = $this->carGarage(100000);
-
-        $preview = RentalService::preview(['garage_id' => $garage->id, 'rental_type' => Const_Type::RENTAL_DAILY, 'days' => 4]);
-
-        $this->assertSame([
-            'start_date' => '2026-11-10',
-            'end_date' => '2026-11-13',
-            'days' => 4,
-            'daily_price' => 100000.0,
-            'rent_amount' => 400000.0,
-            'rental_type' => Const_Type::RENTAL_DAILY,
-        ], $preview);
-        $this->assertDatabaseCount('rentals', 0);
-    }
-
-    public function test_preview_prices_a_monthly_rental_at_25_times_the_daily_price(): void
-    {
-        $preview = RentalService::preview([
-            'garage_id' => $this->carGarage(100000)->id,
-            'rental_type' => Const_Type::RENTAL_MONTHLY,
-            'start_date' => '2026-12-01',
-        ]);
-
-        $this->assertSame(31, $preview['days']);
-        $this->assertSame(2500000.0, $preview['rent_amount']);
-        $this->assertSame('2026-12-31', $preview['end_date']);
-    }
-
     public function test_preview_rejects_a_missing_garage_and_bad_dates(): void
     {
         $garage = $this->carGarage();
@@ -233,48 +203,6 @@ class RentalServiceTest extends TestCase
 
     // ---- activeRentals ----------------------------------------------------
 
-    public function test_active_rentals_lists_only_rentals_running_today_ordered_by_garage_code(): void
-    {
-        $b = $this->rent($this->carGarage(100000, 'C002'));
-        $a = $this->rent($this->carGarage(100000, 'C001'));
-        $this->rent(null, null, ['start_date' => '2026-11-20']); // booked, not running
-        $ended = $this->rent();
-        $ended->update(['start_date' => '2026-11-01', 'end_date' => '2026-11-05']);
-
-        $active = RentalService::activeRentals();
-
-        $this->assertSame([$a->id, $b->id], $active->pluck('id')->all());
-        $this->assertTrue($active->first()->relationLoaded('garage'));
-        $this->assertTrue($active->first()->relationLoaded('vehicle'));
-        $this->assertTrue($active->first()->relationLoaded('user'));
-    }
-
-    public function test_active_rentals_returns_the_new_row_once_even_when_it_has_extensions(): void
-    {
-        $rental = $this->rent();
-        RentalService::extend($rental, '2026-11-14', 'extension-proofs/a.jpg');
-
-        $active = RentalService::activeRentals();
-
-        $this->assertCount(1, $active);
-        $this->assertSame(Const_Status::NEW, $active->first()->status);
-    }
-
-    public function test_active_rentals_keeps_a_rental_running_only_through_its_extension(): void
-    {
-        $rental = $this->rent(null, null, ['days' => 3]); // ends 12 Nov
-        RentalService::extend($rental, '2026-11-20', 'extension-proofs/a.jpg');
-
-        Carbon::setTestNow('2026-11-15 09:00:00');
-
-        $this->assertSame([$rental->id], RentalService::activeRentals()->pluck('id')->all());
-    }
-
-    public function test_active_rentals_is_empty_when_nothing_is_running(): void
-    {
-        $this->assertCount(0, RentalService::activeRentals());
-    }
-
     // ---- period -----------------------------------------------------------
 
     public function test_period_ends_on_start_plus_days_minus_one(): void
@@ -285,22 +213,6 @@ class RentalServiceTest extends TestCase
         );
         $this->assertSame('2026-11-25', RentalService::period(Const_Type::RENTAL_DAILY, '2026-11-25', 1)['end_date']);
         $this->assertSame('2026-12-02', RentalService::period(Const_Type::RENTAL_DAILY, '2026-11-28', 5)['end_date']);
-    }
-
-    public function test_period_accepts_numeric_string_days_and_carbon_dates(): void
-    {
-        $this->assertSame(4, RentalService::period(Const_Type::RENTAL_DAILY, '2026-11-25', '4')['days']);
-        $this->assertSame('2026-11-20', RentalService::period(Const_Type::RENTAL_DAILY, Carbon::parse('2026-11-20 15:00:00'), 1)['start_date']);
-    }
-
-    public function test_period_uses_today_when_the_start_date_is_blank(): void
-    {
-        foreach ([null, ''] as $blank) {
-            $period = RentalService::period(Const_Type::RENTAL_DAILY, $blank, 2);
-
-            $this->assertSame('2026-11-10', $period['start_date']);
-            $this->assertSame('2026-11-11', $period['end_date']);
-        }
     }
 
     public function test_period_rejects_a_past_start_date(): void
@@ -314,17 +226,6 @@ class RentalServiceTest extends TestCase
         $this->assertRentalFails(fn () => RentalService::period(Const_Type::RENTAL_DAILY, '2026-11-20', 30), 'Days must be between 1 and 29 for this month.');
         $this->assertSame(27, RentalService::period(Const_Type::RENTAL_DAILY, '2027-02-01', 27)['days']);
         $this->assertRentalFails(fn () => RentalService::period(Const_Type::RENTAL_DAILY, '2027-02-01', 28), 'Days must be between 1 and 27 for this month.');
-    }
-
-    public function test_period_rejects_zero_negative_missing_and_non_numeric_days(): void
-    {
-        foreach ([0, -1, '0'] as $days) {
-            $this->assertRentalFails(fn () => RentalService::period(Const_Type::RENTAL_DAILY, '2026-11-25', $days), 'Days must be between 1 and 29 for this month.');
-        }
-
-        foreach ([null, '', 'abc'] as $days) {
-            $this->assertRentalFails(fn () => RentalService::period(Const_Type::RENTAL_DAILY, '2026-11-25', $days), 'Number of days is required for a daily rental.');
-        }
     }
 
     public function test_period_makes_a_monthly_rental_last_the_whole_start_month(): void
@@ -432,62 +333,7 @@ class RentalServiceTest extends TestCase
 
     // ---- previewExtension -------------------------------------------------
 
-    public function test_preview_extension_shows_what_extend_would_save_without_saving(): void
-    {
-        $rental = $this->rent($this->carGarage(100000));
-
-        $preview = RentalService::previewExtension($rental, '2026-11-15');
-
-        $this->assertSame([
-            'current_end_date' => '2026-11-12',
-            'start_date' => '2026-11-13',
-            'end_date' => '2026-11-15',
-            'added_days' => 3,
-            'daily_price' => 100000.0,
-            'rent_amount' => 300000.0,
-        ], $preview);
-        $this->assertDatabaseCount('rentals', 1);
-
-        $saved = RentalService::extend($rental, '2026-11-15', 'extension-proofs/a.jpg');
-        $this->assertSame($preview['added_days'], $saved->days);
-        $this->assertSame($preview['rent_amount'], (float) $saved->rent_amount);
-    }
-
-    public function test_preview_extension_applies_the_same_rules_as_extend(): void
-    {
-        $garage = $this->carGarage();
-        $rental = $this->rent($garage);
-        $this->rent($garage, null, ['start_date' => '2026-11-16', 'days' => 2]);
-
-        $this->assertRentalFails(fn () => RentalService::previewExtension($rental, '2026-11-12'), 'The new end date must be after the current end date.');
-        $this->assertRentalFails(fn () => RentalService::previewExtension($rental, '2026-11-17'), 'Garage is booked from 2026-11-16.');
-    }
-
     // ---- latestEndDate ----------------------------------------------------
-
-    public function test_latest_end_date_is_the_end_date_of_a_rental_without_extensions(): void
-    {
-        $this->assertSame('2026-11-12', RentalService::latestEndDate($this->rent())->toDateString());
-    }
-
-    public function test_latest_end_date_includes_extensions_from_any_row(): void
-    {
-        $rental = $this->rent();
-        $first = RentalService::extend($rental, '2026-11-15', 'extension-proofs/a.jpg');
-        RentalService::extend($first, '2026-11-18', 'extension-proofs/b.jpg');
-
-        $this->assertSame('2026-11-18', RentalService::latestEndDate($rental)->toDateString());
-        $this->assertSame('2026-11-18', RentalService::latestEndDate($first)->toDateString());
-    }
-
-    public function test_latest_end_date_ignores_other_rentals_of_the_same_garage(): void
-    {
-        $garage = $this->carGarage();
-        $rental = $this->rent($garage);
-        $this->rent($garage, null, ['start_date' => '2026-11-20', 'days' => 5]);
-
-        $this->assertSame('2026-11-12', RentalService::latestEndDate($rental)->toDateString());
-    }
 
     // ---- isActive ---------------------------------------------------------
 

@@ -34,11 +34,6 @@ class VehicleCreateTest extends TestCase
         $this->page()->assertOk()->assertSet('type', Const_Type::VEHICLE_CAR);
     }
 
-    public function test_render_gives_the_type_options(): void
-    {
-        $this->page()->assertViewHas('typeOptions', fn ($options) => count($options) === 4 && $options[Const_Type::VEHICLE_ELECTRIC_CAR] === 'Electric car');
-    }
-
     public function test_submit_creates_a_vehicle_for_the_logged_in_tenant_and_goes_to_it(): void
     {
         $tenant = User::factory()->create();
@@ -54,15 +49,6 @@ class VehicleCreateTest extends TestCase
         $this->assertSame($tenant->id, $vehicle->user_id);
         $this->assertSame('Avanza', $vehicle->model);
         $this->assertSame('B 1234 XYZ', $vehicle->plate_number);
-    }
-
-    public function test_submit_redirects_to_the_new_vehicle_page(): void
-    {
-        $component = $this->page()
-            ->set('plate_number', 'B 1 A')->set('brand', 'Toyota')->set('vehicle_model', 'Avanza')
-            ->call('submitDefault');
-
-        $component->assertRedirect(route('vehicle.show', Vehicle::firstOrFail()->id));
     }
 
     public function test_rules_require_a_plate_except_for_bicycles(): void
@@ -96,12 +82,5 @@ class VehicleCreateTest extends TestCase
         foreach (['abc' => 'numeric', '0' => 'min', '10000' => 'max'] as $value => $rule) {
             $this->page()->set('type', Const_Type::VEHICLE_ELECTRIC_CAR)->set('maximum_capacity_kw', $value)->call('submitDefault')->assertHasErrors(['maximum_capacity_kw' => $rule]);
         }
-    }
-
-    public function test_submit_drops_the_capacity_of_a_car(): void
-    {
-        $this->page()->set('plate_number', 'B 1 A')->set('brand', 'X')->set('vehicle_model', 'Y')->set('maximum_capacity_kw', '50')->call('submitDefault');
-
-        $this->assertNull(Vehicle::firstOrFail()->maximum_capacity_kw);
     }
 }

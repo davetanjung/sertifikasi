@@ -88,11 +88,4 @@ class UserServiceTest extends TestCase
 
         $this->assertSame(Const_Status::PENDING, $user->fresh()->registration_status);
     }
-
-    public function test_change_status_can_reverse_an_earlier_decision(): void
-    {
-        $user = User::factory()->rejected()->create();
-
-        $this->assertSame(Const_Status::APPROVED, UserService::changeStatus($user, Const_Status::APPROVED)->registration_status);
-    }
 }

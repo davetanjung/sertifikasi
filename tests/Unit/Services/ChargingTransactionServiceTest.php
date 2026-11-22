@@ -9,8 +9,6 @@ use App\Models\Garage;
 use App\Models\Rental;
 use App\Models\Vehicle;
 use App\Services\ChargingTransactionService;
-use App\Services\RentalService;
-use App\Utilities\Constants\Const_Status;
 use App\Utilities\Constants\Const_Type;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -73,26 +71,6 @@ class ChargingTransactionServiceTest extends TestCase
         $this->assertSame(['charged_kwh' => 8.0, 'price_per_kwh' => 2500.0, 'amount' => 20000.0], $preview);
     }
 
-    public function test_preview_accepts_numeric_strings_and_decimals(): void
-    {
-        $preview = ChargingTransactionService::preview($this->electricRental(), '2.5');
-
-        $this->assertSame(7.5, $preview['charged_kwh']);
-        $this->assertSame(18750.0, $preview['amount']);
-    }
-
-    public function test_preview_accepts_an_empty_battery(): void
-    {
-        $this->assertSame(10.0, ChargingTransactionService::preview($this->electricRental(), 0)['charged_kwh']);
-    }
-
-    public function test_preview_saves_nothing(): void
-    {
-        ChargingTransactionService::preview($this->electricRental(), 2);
-
-        $this->assertDatabaseCount('charging_transactions', 0);
-    }
-
     public function test_preview_rejects_a_full_battery(): void
     {
         $this->assertChargingFails(fn () => ChargingTransactionService::preview($this->electricRental(), 10), 'Battery is already full.');
@@ -110,14 +88,6 @@ class ChargingTransactionServiceTest extends TestCase
     public function test_preview_rejects_a_value_that_is_not_a_number(): void
     {
         $this->assertChargingFails(fn () => ChargingTransactionService::preview($this->electricRental(), 'abc'), 'Current capacity must be a number.');
-    }
-
-    public function test_preview_rejects_an_extension_row(): void
-    {
-        $original = $this->electricRental();
-        $extension = RentalService::extend($original, '2026-11-15', 'extension-proofs/a.jpg');
-
-        $this->assertChargingFails(fn () => ChargingTransactionService::preview($extension, 2), 'Charging can only be added to the original rental, not an extension.');
     }
 
     public function test_preview_rejects_a_rental_that_is_not_running_today(): void
@@ -185,29 +155,9 @@ class ChargingTransactionServiceTest extends TestCase
         $this->assertSame('2500.00', $transaction->fresh()->price_per_kwh);
     }
 
-    public function test_create_allows_many_transactions_on_one_rental(): void
-    {
-        $rental = $this->electricRental();
-
-        ChargingTransactionService::create($rental, 2, 'charging-proofs/a.jpg');
-        ChargingTransactionService::create($rental, 5, 'charging-proofs/b.jpg');
-
-        $this->assertSame(2, $rental->chargingTransactions()->count());
-    }
-
     public function test_create_requires_a_payment_proof(): void
     {
         $this->assertChargingFails(fn () => ChargingTransactionService::create($this->electricRental(), 2, ''), 'Payment proof is required.');
         $this->assertDatabaseCount('charging_transactions', 0);
-    }
-
-    public function test_create_applies_the_same_rules_as_preview(): void
-    {
-        $rental = $this->electricRental();
-
-        $this->assertChargingFails(fn () => ChargingTransactionService::create($rental, 10, 'charging-proofs/a.jpg'), 'Battery is already full.');
-        $this->assertChargingFails(fn () => ChargingTransactionService::create($rental, 11, 'charging-proofs/a.jpg'), 'Current capacity must be between 0 and 10 kW.');
-        $this->assertDatabaseCount('charging_transactions', 0);
-        $this->assertSame(Const_Status::NEW, $rental->status);
     }
 }

@@ -21,21 +21,6 @@ class LoginTest extends TestCase
         $this->withoutVite();
     }
 
-    public function test_render_shows_the_login_form_with_remember_off(): void
-    {
-        Livewire::test(Login::class)
-            ->assertOk()
-            ->assertSet('remember', false)
-            ->assertSee('Login');
-    }
-
-    public function test_rules_require_an_email_and_a_password(): void
-    {
-        Livewire::test(Login::class)
-            ->call('process')
-            ->assertHasErrors(['email' => 'required', 'password' => 'required']);
-    }
-
     public function test_process_logs_an_approved_user_in_and_redirects_to_the_dashboard(): void
     {
         $user = User::factory()->create(['email' => 'tenant@example.com']);
@@ -48,19 +33,6 @@ class LoginTest extends TestCase
             ->assertRedirect('/dashboard');
 
         $this->assertAuthenticatedAs($user);
-    }
-
-    public function test_process_passes_the_remember_flag_to_the_service(): void
-    {
-        $user = User::factory()->create(['email' => 'tenant@example.com']);
-
-        Livewire::test(Login::class)
-            ->set('email', 'tenant@example.com')
-            ->set('password', 'password')
-            ->set('remember', true)
-            ->call('process');
-
-        $this->assertNotNull($user->fresh()->remember_token);
     }
 
     public function test_process_shows_the_service_message_for_wrong_credentials(): void

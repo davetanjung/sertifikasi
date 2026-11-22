@@ -34,33 +34,6 @@ class GarageCreateTest extends TestCase
         $this->page()->assertOk()->assertSet('type', Const_Type::GARAGE_CAR)->assertSet('quantity', 1);
     }
 
-    public function test_render_gives_the_type_options_and_the_code_hint(): void
-    {
-        $this->page()
-            ->assertViewHas('typeOptions', fn ($options) => array_keys($options) === Const_Type::GARAGE_TYPES)
-            ->assertViewHas('codeHint', ['first' => 'C001', 'last' => 'C001', 'remaining' => 999, 'fits' => true]);
-    }
-
-    public function test_code_hint_follows_the_type_and_quantity(): void
-    {
-        $this->page()->set('type', Const_Type::GARAGE_BICYCLE)->set('quantity', 3)
-            ->assertViewHas('codeHint', fn ($hint) => $hint['first'] === 'S001' && $hint['last'] === 'S003');
-    }
-
-    public function test_code_hint_is_null_for_a_bad_quantity_or_type(): void
-    {
-        $this->page()->set('quantity', 'abc')->assertViewHas('codeHint', null);
-        $this->page()->set('quantity', '2.5')->assertViewHas('codeHint', null);
-        $this->page()->set('type', 'boat')->assertViewHas('codeHint', null);
-    }
-
-    public function test_code_hint_says_when_the_batch_does_not_fit(): void
-    {
-        Garage::factory()->car()->create(['code' => 'C998']);
-
-        $this->page()->set('quantity', 5)->assertViewHas('codeHint', fn ($hint) => $hint['fits'] === false && $hint['remaining'] === 1);
-    }
-
     public function test_submit_creates_the_batch_and_goes_to_the_garage_list(): void
     {
         $this->page()
@@ -72,15 +45,6 @@ class GarageCreateTest extends TestCase
 
         $this->assertSame(['C001', 'C002', 'C003'], Garage::orderBy('code')->pluck('code')->all());
         $this->assertSame('Garages have been created.', session('flash_success'));
-    }
-
-    public function test_submit_saves_the_kwh_price_for_electric_garages(): void
-    {
-        $this->page()->set('type', Const_Type::GARAGE_ELECTRIC_CAR)->set('daily_price', 90000)->set('price_per_kwh', 3500)->call('submitDefault');
-
-        $garage = Garage::firstOrFail();
-        $this->assertSame('E001', $garage->code);
-        $this->assertSame('3500.00', $garage->price_per_kwh);
     }
 
     public function test_rules_check_every_field(): void

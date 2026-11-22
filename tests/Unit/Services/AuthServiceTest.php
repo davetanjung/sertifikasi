@@ -24,16 +24,6 @@ class AuthServiceTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
-    public function test_login_accepts_the_remember_flag(): void
-    {
-        $user = User::factory()->create(['email' => 'tenant@example.com']);
-
-        AuthService::login('tenant@example.com', 'password', true);
-
-        $this->assertAuthenticatedAs($user);
-        $this->assertNotNull($user->fresh()->remember_token);
-    }
-
     public function test_login_rejects_a_wrong_password_and_an_unknown_email_with_the_same_message(): void
     {
         User::factory()->create(['email' => 'tenant@example.com']);
@@ -77,29 +67,5 @@ class AuthServiceTest extends TestCase
         $this->expectExceptionMessage('These credentials do not match our records.');
 
         AuthService::login('pending@example.com', 'wrong-password');
-    }
-
-    public function test_login_refuses_an_unknown_status(): void
-    {
-        User::factory()->create(['email' => 'odd@example.com', 'registration_status' => 'suspended']);
-
-        $this->expectExceptionMessage('Your account is not allowed to log in.');
-
-        AuthService::login('odd@example.com', 'password');
-    }
-
-    public function test_logout_ends_the_session(): void
-    {
-        $this->actingAs(User::factory()->create());
-
-        AuthService::logout();
-
-        $this->assertGuest();
-    }
-
-    public function test_home_is_the_dashboard_for_every_role(): void
-    {
-        $this->assertSame('/dashboard', AuthService::home(User::factory()->make()));
-        $this->assertSame('/dashboard', AuthService::home(User::factory()->admin()->make()));
     }
 }

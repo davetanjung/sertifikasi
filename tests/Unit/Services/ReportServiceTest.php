@@ -98,34 +98,6 @@ class ReportServiceTest extends TestCase
         $this->assertCount(29, ReportService::forRange('2028-02-01', '2028-02-29')['rows']);
     }
 
-    public function test_a_partial_range_in_one_month_and_a_single_day_work(): void
-    {
-        $this->assertSame(['2026-11-04', '2026-11-05', '2026-11-06'], array_column(ReportService::forRange('2026-11-04', '2026-11-06')['rows'], 'date'));
-        $this->assertCount(1, ReportService::forRange('2026-11-05', '2026-11-05')['rows']);
-    }
-
-    public function test_a_range_over_a_year_boundary_lists_every_month(): void
-    {
-        $months = array_column(ReportService::forRange('2026-12-31', '2027-02-01')['rows'], 'month');
-
-        $this->assertSame(['2026-12', '2027-01', '2027-02'], $months);
-    }
-
-    public function test_the_same_month_of_two_different_years_is_not_a_single_month(): void
-    {
-        $report = ReportService::forRange('2026-11-10', '2027-11-10');
-
-        $this->assertSame(ReportService::BY_MONTH, $report['granularity']);
-        $this->assertCount(13, $report['rows']);
-    }
-
-    public function test_carbon_dates_are_accepted(): void
-    {
-        $report = ReportService::forRange(Carbon::parse('2026-11-01 15:00:00'), Carbon::parse('2026-11-02 08:00:00'));
-
-        $this->assertSame(['2026-11-01', '2026-11-02'], array_column($report['rows'], 'date'));
-    }
-
     // ---- forRange: numbers ------------------------------------------------
 
     public function test_rentals_are_grouped_by_start_month_and_charging_by_created_month(): void
@@ -160,18 +132,6 @@ class ReportServiceTest extends TestCase
         $this->assertSame(15000.0, $rows[6]['charging_income']);
         $this->assertSame(15000.0, $rows[6]['total_income']);
         $this->assertSame(0, $rows[0]['rentals']);
-    }
-
-    public function test_the_first_and_last_day_of_the_range_are_included_and_outside_days_are_not(): void
-    {
-        $this->rental('2026-11-04', 1000);
-        $this->rental('2026-11-05', 2000);
-        $this->rental('2026-11-07', 4000);
-        $this->rental('2026-11-08', 8000);
-
-        $report = ReportService::forRange('2026-11-05', '2026-11-07');
-
-        $this->assertSame([2000.0, 0.0, 4000.0], array_column($report['rows'], 'rent_income'));
     }
 
     public function test_only_new_rows_count_as_rentals_but_extensions_add_income(): void

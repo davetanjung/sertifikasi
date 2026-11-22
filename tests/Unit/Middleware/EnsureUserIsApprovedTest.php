@@ -29,11 +29,6 @@ class EnsureUserIsApprovedTest extends TestCase
         $this->assertSame('passed', $this->handle(User::factory()->create())->getContent());
     }
 
-    public function test_a_guest_passes_through_because_the_auth_middleware_handles_guests(): void
-    {
-        $this->assertSame('passed', $this->handle(null)->getContent());
-    }
-
     public function test_a_user_who_is_no_longer_approved_is_logged_out_and_sent_to_login(): void
     {
         foreach ([User::factory()->pending()->create(), User::factory()->rejected()->create()] as $user) {

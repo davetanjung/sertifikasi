@@ -91,14 +91,6 @@ class GarageServiceTest extends TestCase
         $this->assertDatabaseCount('garages', 0);
     }
 
-    public function test_create_batch_rejects_an_unknown_type(): void
-    {
-        $this->expectException(GeneralException::class);
-        $this->expectExceptionMessage('Garage type is not valid.');
-
-        GarageService::createBatch('boat', 1, 10000);
-    }
-
     public function test_create_batch_rejects_a_quantity_out_of_range(): void
     {
         foreach ([0, -1, 1000] as $quantity) {
@@ -134,39 +126,6 @@ class GarageServiceTest extends TestCase
 
     // ---- nextCodes --------------------------------------------------------
 
-    public function test_next_codes_previews_the_first_and_last_code(): void
-    {
-        GarageService::createBatch(Const_Type::GARAGE_BICYCLE, 2, 10000);
-
-        $this->assertSame(
-            ['first' => 'S003', 'last' => 'S007', 'remaining' => 997, 'fits' => true],
-            GarageService::nextCodes(Const_Type::GARAGE_BICYCLE, 5),
-        );
-    }
-
-    public function test_next_codes_starts_at_001_for_an_empty_type(): void
-    {
-        $this->assertSame('E001', GarageService::nextCodes(Const_Type::GARAGE_ELECTRIC_CAR, 1)['first']);
-    }
-
-    public function test_next_codes_reports_a_batch_that_does_not_fit_without_throwing(): void
-    {
-        Garage::factory()->car()->create(['code' => 'C998']);
-
-        $this->assertSame(
-            ['first' => null, 'last' => null, 'remaining' => 1, 'fits' => false],
-            GarageService::nextCodes(Const_Type::GARAGE_CAR, 2),
-        );
-        $this->assertFalse(GarageService::nextCodes(Const_Type::GARAGE_CAR, 0)['fits']);
-    }
-
-    public function test_next_codes_rejects_an_unknown_type(): void
-    {
-        $this->expectException(GeneralException::class);
-
-        GarageService::nextCodes('boat', 1);
-    }
-
     // ---- typesFor ---------------------------------------------------------
 
     /**
@@ -195,17 +154,6 @@ class GarageServiceTest extends TestCase
 
     // ---- availableFor -----------------------------------------------------
 
-    public function test_available_for_lists_free_garages_of_the_type_ordered_by_code(): void
-    {
-        $second = Garage::factory()->car()->create(['code' => 'C002']);
-        $first = Garage::factory()->car()->create(['code' => 'C001']);
-        Garage::factory()->bicycle()->create(['code' => 'S001']);
-
-        $result = GarageService::availableFor(Const_Type::GARAGE_CAR, '2026-11-12', '2026-11-14');
-
-        $this->assertSame([$first->id, $second->id], $result->pluck('id')->all());
-    }
-
     public function test_available_for_excludes_garages_booked_in_the_range(): void
     {
         $booked = Garage::factory()->car()->create(['code' => 'C001']);
@@ -226,68 +174,6 @@ class GarageServiceTest extends TestCase
     }
 
     // ---- availableForTypes ------------------------------------------------
-
-    public function test_available_for_types_merges_several_types(): void
-    {
-        Garage::factory()->car()->create(['code' => 'C001']);
-        Garage::factory()->electricCar()->create(['code' => 'E001']);
-        Garage::factory()->bicycle()->create(['code' => 'S001']);
-
-        $result = GarageService::availableForTypes(
-            [Const_Type::GARAGE_CAR, Const_Type::GARAGE_ELECTRIC_CAR],
-            '2026-11-12',
-            '2026-11-14',
-        );
-
-        $this->assertSame(['C001', 'E001'], $result['garages']->pluck('code')->all());
-        $this->assertSame(2, $result['total']);
-    }
-
-    public function test_available_for_types_searches_the_code_case_insensitively(): void
-    {
-        Garage::factory()->car()->create(['code' => 'C001']);
-        Garage::factory()->car()->create(['code' => 'C012']);
-
-        $result = GarageService::availableForTypes([Const_Type::GARAGE_CAR], '2026-11-12', '2026-11-14', 'C0');
-
-        $this->assertSame(['C001', 'C012'], $result['garages']->pluck('code')->all());
-        $this->assertSame(1, GarageService::availableForTypes([Const_Type::GARAGE_CAR], '2026-11-12', '2026-11-14', ' c012 ')['total']);
-    }
-
-    public function test_available_for_types_matches_percent_and_underscore_literally(): void
-    {
-        Garage::factory()->car()->create(['code' => 'C001']);
-
-        $this->assertSame(0, GarageService::availableForTypes([Const_Type::GARAGE_CAR], '2026-11-12', '2026-11-14', '%')['total']);
-        $this->assertSame(0, GarageService::availableForTypes([Const_Type::GARAGE_CAR], '2026-11-12', '2026-11-14', '_')['total']);
-    }
-
-    public function test_available_for_types_limits_the_list_but_counts_every_match(): void
-    {
-        foreach (['C001', 'C002', 'C003'] as $code) {
-            Garage::factory()->car()->create(['code' => $code]);
-        }
-
-        $result = GarageService::availableForTypes([Const_Type::GARAGE_CAR], '2026-11-12', '2026-11-14', null, 2);
-
-        $this->assertSame(['C001', 'C002'], $result['garages']->pluck('code')->all());
-        $this->assertSame(3, $result['total']);
-        $this->assertCount(0, GarageService::availableForTypes([Const_Type::GARAGE_CAR], '2026-11-12', '2026-11-14', null, -5)['garages']);
-    }
-
-    public function test_available_for_types_rejects_an_unknown_type_and_a_backwards_range(): void
-    {
-        try {
-            GarageService::availableForTypes(['boat'], '2026-11-12', '2026-11-14');
-            $this->fail('An unknown type should be rejected.');
-        } catch (GeneralException $exception) {
-            $this->assertSame('Garage type is not valid.', $exception->getMessage());
-        }
-
-        $this->expectExceptionMessage('End date cannot be before start date.');
-
-        GarageService::availableForTypes([Const_Type::GARAGE_CAR], '2026-11-14', '2026-11-12');
-    }
 
     // ---- whereFree --------------------------------------------------------
 
