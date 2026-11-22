@@ -11,7 +11,6 @@ use App\Services\GarageService;
 use App\Utilities\Constants\Const_Type;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class GarageServiceTest extends TestCase
@@ -128,28 +127,20 @@ class GarageServiceTest extends TestCase
 
     // ---- typesFor ---------------------------------------------------------
 
-    /**
-     * @return array<string, array{0: string, 1: list<string>}>
-     */
-    public static function fits(): array
+    public function test_types_for_returns_the_garage_types_a_vehicle_fits(): void
     {
-        return [
-            'bicycle' => [Const_Type::VEHICLE_BICYCLE, [Const_Type::GARAGE_BICYCLE]],
-            'motorcycle' => [Const_Type::VEHICLE_MOTORCYCLE, [Const_Type::GARAGE_BICYCLE]],
-            'car' => [Const_Type::VEHICLE_CAR, [Const_Type::GARAGE_CAR]],
-            'electric car' => [Const_Type::VEHICLE_ELECTRIC_CAR, [Const_Type::GARAGE_CAR, Const_Type::GARAGE_ELECTRIC_CAR]],
-            'unknown' => ['truck', []],
-            'empty' => ['', []],
+        $cases = [
+            [Const_Type::VEHICLE_BICYCLE, [Const_Type::GARAGE_BICYCLE]],
+            [Const_Type::VEHICLE_MOTORCYCLE, [Const_Type::GARAGE_BICYCLE]],
+            [Const_Type::VEHICLE_CAR, [Const_Type::GARAGE_CAR]],
+            [Const_Type::VEHICLE_ELECTRIC_CAR, [Const_Type::GARAGE_CAR, Const_Type::GARAGE_ELECTRIC_CAR]],
+            ['truck', []],
+            ['', []],
         ];
-    }
 
-    /**
-     * @param  list<string>  $expected
-     */
-    #[DataProvider('fits')]
-    public function test_types_for_returns_the_garage_types_a_vehicle_fits(string $vehicleType, array $expected): void
-    {
-        $this->assertSame($expected, GarageService::typesFor($vehicleType));
+        foreach ($cases as [$vehicleType, $expected]) {
+            $this->assertSame($expected, GarageService::typesFor($vehicleType));
+        }
     }
 
     // ---- availableFor -----------------------------------------------------
