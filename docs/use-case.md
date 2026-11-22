@@ -1,92 +1,72 @@
-flowchart LR
-    Tenant([Tenant])
-    Admin([Admin])
+@startuml
+left to right direction
+skinparam shadowing false
+skinparam monochrome true
+skinparam packageStyle rectangle
 
-    subgraph System["Garage Rental App"]
-        direction TB
+actor Tenant
+actor Admin
 
-        subgraph Access["Access"]
-            UC_Register(["Register"])
-            UC_Login(["Login"])
-            UC_Logout(["Logout"])
-            UC_Dashboard(["View dashboard"])
-        end
+rectangle "Garage Rental App" {
+  usecase "Register" as Register
+  usecase "Add vehicle" as AddVehicle
+  usecase "Rent a garage" as Rent
+  usecase "Find a free garage" as FindGarage
+  usecase "Preview dates and price" as PreviewRent
+  usecase "Upload payment proof" as UploadRentProof
+  usecase "Add charging transaction" as Charge
+  usecase "Preview kWh and cost" as PreviewCharge
+  usecase "Upload charging proof" as UploadChargeProof
+  usecase "Login" as Login
+  usecase "Logout" as Logout
+  usecase "View dashboard" as Dashboard
+  usecase "View vehicles and detail" as ViewVehicles
+  usecase "View rentals and detail" as ViewRentals
+  usecase "View charging transactions" as ViewCharging
+  usecase "View tenants" as ListTenants
+  usecase "Approve or reject tenant" as Decide
+  usecase "Create garages in a batch" as CreateGarages
+  usecase "View garages and status" as ViewGarages
+  usecase "View rentals running today" as ListRunning
+  usecase "Extend a rental" as Extend
+  usecase "Preview extra cost" as PreviewExtension
+  usecase "Upload extension proof" as UploadExtensionProof
+  usecase "View rental report" as Report
+  usecase "Filter by dates, garage type, tenant" as Filter
+}
 
-        subgraph Tenants["Tenant management"]
-            UC_ListTenants(["View tenants"])
-            UC_Decide(["Approve or reject tenant"])
-        end
+Tenant --> Register
+Tenant --> Login
+Tenant --> Logout
+Tenant --> Dashboard
+Tenant --> AddVehicle
+Tenant --> ViewVehicles
+Tenant --> Rent
+Tenant --> ViewRentals
+Tenant --> Charge
+Tenant --> ViewCharging
+Admin --> Login
+Admin --> Logout
+Admin --> Dashboard
+Admin --> ListTenants
+Admin --> Decide
+Admin --> CreateGarages
+Admin --> ViewGarages
+Admin --> ListRunning
+Admin --> Extend
+Admin --> ViewVehicles
+Admin --> ViewRentals
+Admin --> ViewCharging
+Admin --> Report
 
-        subgraph Vehicles["Vehicles"]
-            UC_AddVehicle(["Add vehicle"])
-            UC_ViewVehicles(["View vehicles and detail"])
-        end
-
-        subgraph Garages["Garages"]
-            UC_CreateGarages(["Create garages in a batch"])
-            UC_ViewGarages(["View garages and status"])
-        end
-
-        subgraph Rentals["Rentals"]
-            UC_Rent(["Rent a garage"])
-            UC_FindGarage(["Find a free garage"])
-            UC_PreviewRent(["Preview dates and price"])
-            UC_UploadRentProof(["Upload payment proof"])
-            UC_ViewRentals(["View rentals and detail"])
-        end
-
-        subgraph Extensions["Extensions"]
-            UC_ListRunning(["View rentals running today"])
-            UC_Extend(["Extend a rental"])
-            UC_PreviewExtension(["Preview extra cost"])
-            UC_UploadExtensionProof(["Upload extension proof"])
-        end
-
-        subgraph Charging["Electric car charging"]
-            UC_Charge(["Add charging transaction"])
-            UC_PreviewCharge(["Preview kWh and cost"])
-            UC_UploadChargeProof(["Upload charging proof"])
-            UC_ViewCharging(["View charging transactions"])
-        end
-
-        subgraph Reports["Reports"]
-            UC_Report(["View rental report"])
-            UC_Filter(["Filter by dates, garage type, tenant"])
-        end
-    end
-
-    Tenant --- UC_Register
-    Tenant --- UC_Login
-    Tenant --- UC_Logout
-    Tenant --- UC_Dashboard
-    Tenant --- UC_AddVehicle
-    Tenant --- UC_ViewVehicles
-    Tenant --- UC_Rent
-    Tenant --- UC_ViewRentals
-    Tenant --- UC_Charge
-    Tenant --- UC_ViewCharging
-
-    Admin --- UC_Login
-    Admin --- UC_Logout
-    Admin --- UC_Dashboard
-    Admin --- UC_ListTenants
-    Admin --- UC_Decide
-    Admin --- UC_CreateGarages
-    Admin --- UC_ViewGarages
-    Admin --- UC_ListRunning
-    Admin --- UC_Extend
-    Admin --- UC_ViewVehicles
-    Admin --- UC_ViewRentals
-    Admin --- UC_ViewCharging
-    Admin --- UC_Report
-
-    UC_Rent -.->|include| UC_FindGarage
-    UC_Rent -.->|include| UC_PreviewRent
-    UC_Rent -.->|include| UC_UploadRentProof
-    UC_Extend -.->|include| UC_PreviewExtension
-    UC_Extend -.->|include| UC_UploadExtensionProof
-    UC_Extend -.->|extends from| UC_ListRunning
-    UC_Charge -.->|include| UC_PreviewCharge
-    UC_Charge -.->|include| UC_UploadChargeProof
-    UC_Report -.->|include| UC_Filter
-    UC_Decide -.->|extends from| UC_ListTenants
+Rent .> FindGarage : <<include>>
+Rent .> PreviewRent : <<include>>
+Rent .> UploadRentProof : <<include>>
+Extend .> PreviewExtension : <<include>>
+Extend .> UploadExtensionProof : <<include>>
+Extend .> ListRunning : <<extend>>
+Charge .> PreviewCharge : <<include>>
+Charge .> UploadChargeProof : <<include>>
+Report .> Filter : <<include>>
+Decide .> ListTenants : <<extend>>
+@enduml
