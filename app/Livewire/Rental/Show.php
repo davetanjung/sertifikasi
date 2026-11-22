@@ -45,6 +45,8 @@ final class Show extends Component
         $totalRent = (float) $this->obj->rent_amount + $extensions->sum(fn (Rental $row): float => (float) $row->rent_amount);
         $totalCharging = $chargings->sum(fn ($charging): float => (float) $charging->amount);
         $isActive = RentalService::isActive($this->obj);
+        $latestEndDate = RentalService::latestEndDate($this->obj);
+        $canExtend = auth()->user()->isAdmin() && $latestEndDate->gte(today());
 
         $canCharge = $isActive
             && $this->obj->user_id === auth()->id()
@@ -55,7 +57,8 @@ final class Show extends Component
         return view('rental.show', [
             'extensions' => $extensions,
             'chargings' => $chargings,
-            'latestEndDate' => RentalService::latestEndDate($this->obj),
+            'latestEndDate' => $latestEndDate,
+            'canExtend' => $canExtend,
             'totalRent' => $totalRent,
             'totalCharging' => $totalCharging,
             'grandTotal' => $totalRent + $totalCharging,

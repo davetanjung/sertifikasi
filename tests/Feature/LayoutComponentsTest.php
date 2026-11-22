@@ -27,7 +27,7 @@ class LayoutComponentsTest extends TestCase
             ->assertSee(config('app.name'))
             ->assertSee('Search...', false)
             ->assertSee('Dashboard')
-            ->assertSee('Settings')
+            ->assertDontSee('Settings')
             ->assertSee('Logout')
             ->assertSee('&copy; '.now()->year, false)
             ->assertSee('Page body here');

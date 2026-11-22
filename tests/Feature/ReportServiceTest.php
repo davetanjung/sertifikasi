@@ -83,27 +83,108 @@ class ReportServiceTest extends TestCase
         $this->fail("No row with {$key} = {$value}.");
     }
 
-    public function test_monthly_returns_twelve_rows_with_zero_months(): void
+    /**
+     * The monthly rows of a whole year.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function year(int $year, ?string $garageType = null, ?string $userId = null): array
+    {
+        return ReportService::forRange("{$year}-01-01", "{$year}-12-31", $garageType, $userId)['rows'];
+    }
+
+    /**
+     * The daily rows of a whole month.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function month(int $year, int $month, ?string $garageType = null, ?string $userId = null): array
+    {
+        $start = Carbon::create($year, $month, 1);
+
+        return ReportService::forRange($start->toDateString(), $start->copy()->endOfMonth()->toDateString(), $garageType, $userId)['rows'];
+    }
+
+    public function test_a_range_over_several_months_gives_one_row_per_month_with_zero_months(): void
     {
         $this->rent('2027-03-10');
 
-        $rows = ReportService::monthly(2027);
+        $report = ReportService::forRange('2027-01-01', '2027-12-31');
 
-        $this->assertCount(12, $rows);
-        $this->assertSame(range(1, 12), array_column($rows, 'month'));
+        $this->assertSame(ReportService::BY_MONTH, $report['granularity']);
+        $this->assertCount(12, $report['rows']);
+        $this->assertSame('2027-01', $report['rows'][0]['month']);
+        $this->assertSame('2027-12', $report['rows'][11]['month']);
         $this->assertSame(
-            ['month' => 1, 'rentals' => 0, 'rent_income' => 0.0, 'charging_income' => 0.0, 'total_income' => 0.0],
-            $rows[0]
+            ['month' => '2027-01', 'rentals' => 0, 'rent_income' => 0.0, 'charging_income' => 0.0, 'total_income' => 0.0],
+            $report['rows'][0]
         );
-        $this->assertSame(1, $rows[2]['rentals']);
-        $this->assertSame(3000.0, $rows[2]['rent_income']);
+        $this->assertSame(1, $report['rows'][2]['rentals']);
+        $this->assertSame(3000.0, $report['rows'][2]['rent_income']);
     }
 
-    public function test_monthly_ignores_other_years(): void
+    public function test_a_range_inside_one_month_gives_one_row_per_day(): void
+    {
+        $report = ReportService::forRange('2028-02-01', '2028-02-29');
+
+        $this->assertSame(ReportService::BY_DAY, $report['granularity']);
+        $this->assertCount(29, $report['rows']);
+        $this->assertSame(
+            ['date' => '2028-02-01', 'rentals' => 0, 'rent_income' => 0.0, 'charging_income' => 0.0, 'total_income' => 0.0],
+            $report['rows'][0]
+        );
+        $this->assertSame('2028-02-29', $report['rows'][28]['date']);
+    }
+
+    public function test_a_partial_range_in_one_month_only_has_the_days_asked_for(): void
+    {
+        $this->rent('2027-03-05');
+        $this->rent('2027-03-20');
+
+        $report = ReportService::forRange('2027-03-04', '2027-03-06');
+
+        $this->assertSame(['2027-03-04', '2027-03-05', '2027-03-06'], array_column($report['rows'], 'date'));
+        $this->assertSame(1, array_sum(array_column($report['rows'], 'rentals')));
+    }
+
+    public function test_a_single_day_gives_one_row(): void
+    {
+        $this->rent('2027-03-05');
+
+        $report = ReportService::forRange('2027-03-05', '2027-03-05');
+
+        $this->assertSame(ReportService::BY_DAY, $report['granularity']);
+        $this->assertCount(1, $report['rows']);
+        $this->assertSame(3000.0, $report['rows'][0]['total_income']);
+    }
+
+    public function test_two_dates_in_neighbouring_months_give_month_rows(): void
+    {
+        $report = ReportService::forRange('2027-03-31', '2027-04-01');
+
+        $this->assertSame(ReportService::BY_MONTH, $report['granularity']);
+        $this->assertSame(['2027-03', '2027-04'], array_column($report['rows'], 'month'));
+    }
+
+    public function test_a_range_over_several_years_gives_a_row_for_every_month(): void
+    {
+        $this->rent('2026-12-10');
+        $this->rent('2027-01-10');
+
+        $report = ReportService::forRange('2026-12-01', '2027-02-28');
+
+        $this->assertSame(['2026-12', '2027-01', '2027-02'], array_column($report['rows'], 'month'));
+        $this->assertSame([1, 1, 0], array_column($report['rows'], 'rentals'));
+    }
+
+    public function test_only_rentals_starting_inside_the_range_are_counted(): void
     {
         $this->rent('2026-03-10');
+        $this->rent('2027-03-10');
 
-        $this->assertSame(0, array_sum(array_column(ReportService::monthly(2027), 'rentals')));
+        $this->assertSame(0, array_sum(array_column($this->year(2028), 'rentals')));
+        $this->assertSame(1, array_sum(array_column($this->year(2027), 'rentals')));
+        $this->assertSame(1, array_sum(array_column($this->year(2026), 'rentals')));
     }
 
     public function test_extension_adds_income_to_its_start_month_but_is_not_a_rental(): void
@@ -111,7 +192,7 @@ class ReportServiceTest extends TestCase
         $rental = $this->rent('2027-01-30'); // 30 Jan to 1 Feb
         RentalService::extend($rental, '2027-02-05', 'proofs/ext.jpg'); // 2 to 5 Feb, 4 days
 
-        $rows = ReportService::monthly(2027);
+        $rows = $this->year(2027);
 
         $this->assertSame(1, $rows[0]['rentals']);
         $this->assertSame(3000.0, $rows[0]['rent_income']);
@@ -125,7 +206,7 @@ class ReportServiceTest extends TestCase
         $rental = $this->rent('2027-03-10', Const_Type::GARAGE_ELECTRIC_CAR);
         $this->charge($rental, '2027-03-11');
 
-        $march = ReportService::monthly(2027)[2];
+        $march = $this->year(2027)[2];
 
         $this->assertSame(1, $march['rentals']);
         $this->assertSame(3000.0, $march['rent_income']);
@@ -138,7 +219,7 @@ class ReportServiceTest extends TestCase
         $rental = $this->rent('2027-01-30', Const_Type::GARAGE_ELECTRIC_CAR); // until 1 Feb
         $this->charge($rental, '2027-02-01');
 
-        $rows = ReportService::monthly(2027);
+        $rows = $this->year(2027);
 
         $this->assertSame(3000.0, $rows[0]['total_income']);
         $this->assertSame(0.0, $rows[0]['charging_income']);
@@ -146,16 +227,15 @@ class ReportServiceTest extends TestCase
         $this->assertSame(20000.0, $rows[1]['charging_income']);
     }
 
-    public function test_daily_rows_cover_every_day_of_the_month(): void
+    public function test_the_range_includes_the_end_date_itself(): void
     {
-        $this->assertCount(29, ReportService::daily(2028, 2));
-        $this->assertCount(28, ReportService::daily(2027, 2));
-        $this->assertCount(30, ReportService::daily(2027, 4));
-        $this->assertCount(31, ReportService::daily(2027, 1));
+        $rental = $this->rent('2027-03-10', Const_Type::GARAGE_ELECTRIC_CAR);
+        $this->charge($rental, '2027-03-12');
 
-        $rows = ReportService::daily(2028, 2);
-        $this->assertSame(['day' => 1, 'date' => '2028-02-01', 'rentals' => 0, 'rent_income' => 0.0, 'charging_income' => 0.0, 'total_income' => 0.0], $rows[0]);
-        $this->assertSame('2028-02-29', $rows[28]['date']);
+        $rows = ReportService::forRange('2027-03-10', '2027-03-12')['rows'];
+
+        $this->assertSame(3000.0, $this->rowWhere($rows, 'date', '2027-03-10')['total_income']);
+        $this->assertSame(20000.0, $this->rowWhere($rows, 'date', '2027-03-12')['charging_income']);
     }
 
     public function test_daily_groups_rentals_by_start_day_and_charging_by_created_day(): void
@@ -165,158 +245,85 @@ class ReportServiceTest extends TestCase
         $this->charge($rental, '2027-03-12');
         $this->rent('2027-04-05');
 
-        $rows = ReportService::daily(2027, 3);
+        $rows = $this->month(2027, 3);
 
-        $this->assertSame(3000.0, $this->rowWhere($rows, 'day', 5)['total_income']);
-        $this->assertSame(3000.0, $this->rowWhere($rows, 'day', 10)['total_income']);
-        $this->assertSame(0, $this->rowWhere($rows, 'day', 12)['rentals']);
-        $this->assertSame(20000.0, $this->rowWhere($rows, 'day', 12)['charging_income']);
+        $this->assertSame(3000.0, $this->rowWhere($rows, 'date', '2027-03-05')['total_income']);
+        $this->assertSame(3000.0, $this->rowWhere($rows, 'date', '2027-03-10')['total_income']);
+        $this->assertSame(0, $this->rowWhere($rows, 'date', '2027-03-12')['rentals']);
+        $this->assertSame(20000.0, $this->rowWhere($rows, 'date', '2027-03-12')['charging_income']);
         $this->assertSame(2, array_sum(array_column($rows, 'rentals')));
     }
 
-    public function test_garage_type_filter_on_monthly_and_daily(): void
+    public function test_garage_type_filter(): void
     {
         $this->rent('2027-03-10', Const_Type::GARAGE_BICYCLE);
         $electric = $this->rent('2027-03-10', Const_Type::GARAGE_ELECTRIC_CAR);
         $this->charge($electric, '2027-03-10');
 
-        $monthlyElectric = ReportService::monthly(2027, Const_Type::GARAGE_ELECTRIC_CAR)[2];
+        $monthlyElectric = $this->year(2027, Const_Type::GARAGE_ELECTRIC_CAR)[2];
         $this->assertSame(1, $monthlyElectric['rentals']);
         $this->assertSame(23000.0, $monthlyElectric['total_income']);
 
-        $monthlyBicycle = ReportService::monthly(2027, Const_Type::GARAGE_BICYCLE)[2];
+        $monthlyBicycle = $this->year(2027, Const_Type::GARAGE_BICYCLE)[2];
         $this->assertSame(3000.0, $monthlyBicycle['total_income']);
         $this->assertSame(0.0, $monthlyBicycle['charging_income']);
 
-        $dailyCar = ReportService::daily(2027, 3, Const_Type::GARAGE_CAR);
+        $dailyCar = $this->month(2027, 3, Const_Type::GARAGE_CAR);
         $this->assertSame(0.0, array_sum(array_column($dailyCar, 'total_income')));
 
-        $dailyElectric = ReportService::daily(2027, 3, Const_Type::GARAGE_ELECTRIC_CAR);
-        $this->assertSame(23000.0, $this->rowWhere($dailyElectric, 'day', 10)['total_income']);
+        $dailyElectric = $this->month(2027, 3, Const_Type::GARAGE_ELECTRIC_CAR);
+        $this->assertSame(23000.0, $this->rowWhere($dailyElectric, 'date', '2027-03-10')['total_income']);
     }
 
-    public function test_tenant_filter_on_monthly_and_daily(): void
+    public function test_tenant_filter(): void
     {
         $alice = User::factory()->create(['name' => 'Alice']);
         $bob = User::factory()->create(['name' => 'Bob']);
         $aliceRental = $this->rent('2027-03-10', Const_Type::GARAGE_ELECTRIC_CAR, $alice);
-        $this->charge($aliceRental, '2027-03-10');
+        $this->charge($aliceRental, '2027-03-11');
         $this->rent('2027-03-10', Const_Type::GARAGE_CAR, $bob);
 
-        $monthlyAlice = ReportService::monthly(2027, null, $alice->id)[2];
+        $monthlyAlice = $this->year(2027, null, $alice->id)[2];
         $this->assertSame(1, $monthlyAlice['rentals']);
         $this->assertSame(23000.0, $monthlyAlice['total_income']);
 
-        $monthlyBob = ReportService::monthly(2027, null, $bob->id)[2];
+        $monthlyBob = $this->year(2027, null, $bob->id)[2];
         $this->assertSame(3000.0, $monthlyBob['total_income']);
         $this->assertSame(0.0, $monthlyBob['charging_income']);
 
-        $dailyBob = ReportService::daily(2027, 3, null, $bob->id);
+        $dailyBob = $this->month(2027, 3, null, $bob->id);
         $this->assertSame(3000.0, array_sum(array_column($dailyBob, 'total_income')));
+
+        $both = $this->year(2027, Const_Type::GARAGE_CAR, $alice->id)[2];
+        $this->assertSame(0, $both['rentals']);
     }
 
-    public function test_by_garage_type_has_all_three_types_even_without_data(): void
-    {
-        $rows = ReportService::byGarageType();
-
-        $this->assertSame(Const_Type::GARAGE_TYPES, array_column($rows, 'garage_type'));
-        $this->assertSame(0.0, array_sum(array_column($rows, 'total_income')));
-    }
-
-    public function test_by_garage_type_honors_year_month_and_tenant_filters(): void
-    {
-        $alice = User::factory()->create();
-        $this->rent('2027-03-10', Const_Type::GARAGE_BICYCLE, $alice);
-        $electric = $this->rent('2027-03-10', Const_Type::GARAGE_ELECTRIC_CAR);
-        $this->charge($electric, '2027-03-11');
-        $this->rent('2027-04-10', Const_Type::GARAGE_BICYCLE);
-        $this->rent('2026-03-10', Const_Type::GARAGE_BICYCLE);
-
-        $all = ReportService::byGarageType();
-        $this->assertSame(3, $this->rowWhere($all, 'garage_type', Const_Type::GARAGE_BICYCLE)['rentals']);
-
-        $march = ReportService::byGarageType(2027, 3);
-        $this->assertSame(1, $this->rowWhere($march, 'garage_type', Const_Type::GARAGE_BICYCLE)['rentals']);
-        $this->assertSame(23000.0, $this->rowWhere($march, 'garage_type', Const_Type::GARAGE_ELECTRIC_CAR)['total_income']);
-
-        $year = ReportService::byGarageType(2027);
-        $this->assertSame(2, $this->rowWhere($year, 'garage_type', Const_Type::GARAGE_BICYCLE)['rentals']);
-
-        $tenant = ReportService::byGarageType(2027, 3, $alice->id);
-        $this->assertSame(1, $this->rowWhere($tenant, 'garage_type', Const_Type::GARAGE_BICYCLE)['rentals']);
-        $this->assertSame(0, $this->rowWhere($tenant, 'garage_type', Const_Type::GARAGE_ELECTRIC_CAR)['rentals']);
-        $this->assertCount(3, $tenant);
-    }
-
-    public function test_by_tenant_lists_only_active_tenants_ordered_by_total_then_name(): void
-    {
-        $zed = User::factory()->create(['name' => 'Zed']);
-        $amy = User::factory()->create(['name' => 'Amy']);
-        $big = User::factory()->create(['name' => 'Big']);
-        User::factory()->create(['name' => 'Idle']);
-
-        $this->rent('2027-03-10', Const_Type::GARAGE_CAR, $zed);
-        $this->rent('2027-03-10', Const_Type::GARAGE_CAR, $amy);
-        $bigRental = $this->rent('2027-03-10', Const_Type::GARAGE_ELECTRIC_CAR, $big);
-        $this->charge($bigRental, '2027-03-11');
-
-        $rows = ReportService::byTenant();
-
-        $this->assertSame(['Big', 'Amy', 'Zed'], array_column($rows, 'name'));
-        $this->assertSame($big->id, $rows[0]['user_id']);
-        $this->assertSame($big->email, $rows[0]['email']);
-        $this->assertSame(23000.0, $rows[0]['total_income']);
-        $this->assertSame(1, $rows[1]['rentals']);
-    }
-
-    public function test_by_tenant_honors_year_month_and_garage_type_filters(): void
-    {
-        $alice = User::factory()->create(['name' => 'Alice']);
-        $bob = User::factory()->create(['name' => 'Bob']);
-        $this->rent('2027-03-10', Const_Type::GARAGE_CAR, $alice);
-        $this->rent('2027-04-10', Const_Type::GARAGE_BICYCLE, $bob);
-
-        $this->assertCount(2, ReportService::byTenant(2027));
-        $this->assertSame(['Alice'], array_column(ReportService::byTenant(2027, 3), 'name'));
-        $this->assertSame(['Bob'], array_column(ReportService::byTenant(2027, null, Const_Type::GARAGE_BICYCLE), 'name'));
-        $this->assertSame([], ReportService::byTenant(2026));
-    }
-
-    public function test_years_run_from_the_first_year_to_next_year(): void
-    {
-        Carbon::setTestNow('2026-11-10 09:00:00');
-        $this->assertSame([2026, 2027], ReportService::years());
-
-        Carbon::setTestNow('2028-02-01 09:00:00');
-        $this->assertSame([2026, 2027, 2028, 2029], ReportService::years());
-
-        Carbon::setTestNow('2020-01-01 09:00:00');
-        $this->assertSame([2026], ReportService::years());
-    }
-
-    public function test_invalid_filters_throw_a_general_exception(): void
+    public function test_invalid_filters_throw_a_general_exception_with_a_message(): void
     {
         $invalid = [
-            'garage type' => fn () => ReportService::monthly(2027, 'boat'),
-            'daily garage type' => fn () => ReportService::daily(2027, 3, 'boat'),
-            'month 13' => fn () => ReportService::daily(2027, 13),
-            'month 0' => fn () => ReportService::byGarageType(2027, 0),
-            'month without year (garage type)' => fn () => ReportService::byGarageType(null, 3),
-            'month without year (tenant)' => fn () => ReportService::byTenant(null, 3),
-            'year too small' => fn () => ReportService::monthly(99),
-            'tenant garage type' => fn () => ReportService::byTenant(null, null, 'boat'),
+            'Start date is required.' => fn () => ReportService::forRange(null, '2027-03-01'),
+            'End date is required.' => fn () => ReportService::forRange('2027-03-01', ''),
+            'Start date is not valid.' => fn () => ReportService::forRange('15-03-2027', '2027-03-20'),
+            'End date is not valid.' => fn () => ReportService::forRange('2027-03-01', '2027-13-45'),
+            'Start date cannot be before 2026.' => fn () => ReportService::forRange('2025-12-31', '2027-03-20'),
+            'End date cannot be before start date.' => fn () => ReportService::forRange('2027-03-20', '2027-03-19'),
+            'Garage type is not valid.' => fn () => ReportService::forRange('2027-03-01', '2027-03-20', 'boat'),
         ];
 
-        foreach ($invalid as $name => $callback) {
+        foreach ($invalid as $message => $callback) {
             try {
                 $callback();
-            } catch (GeneralException) {
-                continue;
+                $this->fail("Expected GeneralException: {$message}");
+            } catch (GeneralException $exception) {
+                $this->assertSame($message, $exception->getMessage());
             }
-
-            $this->fail("Expected GeneralException for: {$name}.");
         }
+    }
 
-        $this->assertCount(8, $invalid);
+    public function test_carbon_dates_are_accepted(): void
+    {
+        $report = ReportService::forRange(Carbon::parse('2027-03-01 15:00:00'), Carbon::parse('2027-03-03 08:00:00'));
+
+        $this->assertSame(['2027-03-01', '2027-03-02', '2027-03-03'], array_column($report['rows'], 'date'));
     }
 }

@@ -747,6 +747,36 @@ class RentalPagesTest extends TestCase
             ->assertViewHas('isActive', true);
     }
 
+    public function test_the_admin_sees_the_extend_button_beside_back_to_list_on_a_rental_that_has_not_ended(): void
+    {
+        $rental = $this->rent(Garage::factory()->car()->create(), $this->carOf(User::factory()->create()));
+
+        $this->actingAs(User::factory()->admin()->create())
+            ->get(route('rental.show', $rental->id))
+            ->assertOk()
+            ->assertSee('Extend rental')
+            ->assertSee(route('extension.create', ['rental' => $rental->id]), false);
+
+        Livewire::actingAs(User::factory()->admin()->create())
+            ->test(Show::class, ['obj' => $rental])
+            ->assertViewHas('canExtend', true);
+    }
+
+    public function test_the_extend_button_is_hidden_from_the_tenant_and_on_an_ended_rental(): void
+    {
+        $tenant = User::factory()->create();
+        $rental = $this->rent(Garage::factory()->car()->create(), $this->carOf($tenant));
+
+        $this->actingAs($tenant)->get(route('rental.show', $rental->id))->assertOk()->assertDontSee('Extend rental');
+
+        Carbon::setTestNow('2026-11-13 09:00:00');
+
+        $this->actingAs(User::factory()->admin()->create())
+            ->get(route('rental.show', $rental->id))
+            ->assertOk()
+            ->assertDontSee('Extend rental');
+    }
+
     public function test_show_reports_an_ended_rental_as_not_active(): void
     {
         $tenant = User::factory()->create();

@@ -1,76 +1,69 @@
 @php
-    $isOverview = in_array($report, ['garage_type', 'tenant'], true);
-    $firstColumn = match ($report) {
-        'monthly' => 'Month',
-        'daily' => 'Day',
-        'garage_type' => 'Garage type',
-        default => 'Tenant',
-    };
+    $firstColumn = $isDaily ? 'Day' : 'Month';
+    $minimumDate = '2026-01-01';
 @endphp
 
 <div>
     <x-flash />
 
-    <x-page-header title="Rental reports" subtitle="Number of rentals and income, including charging and extensions." />
-
-    <div class="mb-4 flex flex-wrap gap-2" role="group" aria-label="Report type">
-        @foreach ($reportOptions as $value => $label)
-            <button
-                type="button"
-                wire:click="$set('report', '{{ $value }}')"
-                wire:key="report-tab-{{ $value }}"
-                @if ($report === $value) aria-pressed="true" @else aria-pressed="false" @endif
-                @class([
-                    'flex-1 whitespace-nowrap rounded-md px-4 py-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black',
-                    'border border-black bg-black text-white' => $report === $value,
-                    'border border-neutral-400 bg-white text-black hover:border-black hover:bg-neutral-100' => $report !== $value,
-                ])
-            >
-                {{ $label }}
-            </button>
-        @endforeach
-    </div>
+    <x-page-header title="Rental reports" subtitle="Pick a start and end date: a range inside one month shows each day, a longer range shows each month. Narrow it by garage type or tenant." />
 
     <x-card class="mb-6">
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <x-form.select
-                label="Year"
-                name="year"
-                :options="$yearOptions"
-                :placeholder="$isOverview ? 'All years' : null"
-                wire:model.live="year"
-            />
-
-            @if (in_array($report, ['daily', 'garage_type', 'tenant'], true))
-                <x-form.select
-                    label="Month"
-                    name="month"
-                    :options="$monthOptions"
-                    :placeholder="$report === 'daily' ? null : 'All months'"
-                    wire:model.live="month"
+        <form wire:submit="$refresh" class="flex flex-wrap items-end gap-4">
+            <div class="w-full sm:w-52">
+                <x-form.input
+                    label="Start date"
+                    name="start_date"
+                    type="date"
+                    :min="$minimumDate"
+                    wire:model="start_date"
                 />
-            @endif
+            </div>
 
-            @if (in_array($report, ['monthly', 'daily', 'tenant'], true))
+            <div class="w-full sm:w-52">
+                <x-form.input
+                    label="End date"
+                    name="end_date"
+                    type="date"
+                    :min="$minimumDate"
+                    wire:model="end_date"
+                />
+            </div>
+
+            <div class="w-full sm:w-52">
                 <x-form.select
                     label="Garage type"
                     name="garage_type"
                     :options="$garageTypeOptions"
                     placeholder="All types"
-                    wire:model.live="garage_type"
+                    wire:model="garage_type"
                 />
-            @endif
+            </div>
 
-            @if (in_array($report, ['monthly', 'daily', 'garage_type'], true))
+            <div class="w-full sm:w-52">
                 <x-form.select
                     label="Tenant"
                     name="user_id"
                     :options="$tenantOptions"
                     placeholder="All tenants"
-                    wire:model.live="user_id"
+                    wire:model="user_id"
                 />
-            @endif
-        </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+                <x-button type="submit" wire:loading.attr="disabled">
+                    <x-icon name="funnel" class="size-4" />
+                    Filter
+                </x-button>
+                <button
+                    type="button"
+                    wire:click="resetFilters"
+                    class="rounded-md px-4 py-2 text-sm font-semibold text-neutral-700 hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                >
+                    Reset
+                </button>
+            </div>
+        </form>
     </x-card>
 
     @if ($reportError)
@@ -110,17 +103,12 @@
             </x-slot:head>
 
             @forelse ($rows as $row)
-                <tr wire:key="report-row-{{ $report }}-{{ $loop->index }}" @class(['text-neutral-500' => $row['total_income'] == 0 && $row['rentals'] == 0])>
+                <tr wire:key="report-row-{{ $loop->index }}" @class(['text-neutral-500' => $row['total_income'] == 0 && $row['rentals'] == 0])>
                     <td class="whitespace-nowrap px-4 py-3 font-medium">
-                        @if ($report === 'monthly')
-                            {{ $monthOptions[$row['month']] ?? $row['month'] }}
-                        @elseif ($report === 'daily')
+                        @if ($isDaily)
                             {{ _date_format_output($row['date']) }}
-                        @elseif ($report === 'garage_type')
-                            <x-garage-type-badge :type="$row['garage_type']" />
                         @else
-                            {{ $row['name'] }}
-                            <span class="block text-xs font-normal text-neutral-600">{{ $row['email'] }}</span>
+                            {{ \Carbon\Carbon::parse($row['month'].'-01')->format('F Y') }}
                         @endif
                     </td>
                     <td class="whitespace-nowrap px-4 py-3 text-right">{{ $row['rentals'] }}</td>

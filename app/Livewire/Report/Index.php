@@ -15,23 +15,13 @@ use Livewire\Component;
 
 final class Index extends Component
 {
-    private const REPORT_MONTHLY = 'monthly';
-
-    private const REPORT_DAILY = 'daily';
-
-    private const REPORT_GARAGE_TYPE = 'garage_type';
-
-    private const REPORT_TENANT = 'tenant';
-
     protected $layout = 'components.layouts.app';
 
     public $menuTitle = 'Report';
 
-    public $report = self::REPORT_MONTHLY;
+    public $start_date;
 
-    public $year;
-
-    public $month;
+    public $end_date;
 
     public $garage_type;
 
@@ -41,17 +31,28 @@ final class Index extends Component
     {
         abort_unless(auth()->user()->isAdmin(), 403);
 
-        $this->year = now()->year;
-        $this->month = now()->month;
+        $this->resetFilters();
+    }
+
+    /**
+     * Back to the default filters: today, all garage types and all tenants.
+     */
+    public function resetFilters(): void
+    {
+        $this->start_date = today()->toDateString();
+        $this->end_date = today()->toDateString();
+        $this->garage_type = null;
+        $this->user_id = null;
     }
 
     public function render(): View
     {
         $rows = [];
+        $granularity = ReportService::BY_MONTH;
         $reportError = null;
 
         try {
-            $rows = $this->rows();
+            ['granularity' => $granularity, 'rows' => $rows] = $this->report();
         } catch (GeneralException $exception) {
             $reportError = $exception->getMessage();
         }
@@ -59,14 +60,7 @@ final class Index extends Component
         return view('report.index', [
             'rows' => $rows,
             'totals' => $this->totals($rows),
-            'reportOptions' => [
-                self::REPORT_MONTHLY => 'Monthly',
-                self::REPORT_DAILY => 'Daily',
-                self::REPORT_GARAGE_TYPE => 'Per garage type',
-                self::REPORT_TENANT => 'Per tenant',
-            ],
-            'yearOptions' => collect(ReportService::years())->mapWithKeys(fn (int $year): array => [$year => (string) $year])->all(),
-            'monthOptions' => collect(range(1, 12))->mapWithKeys(fn (int $month): array => [$month => now()->startOfMonth()->month($month)->format('F')])->all(),
+            'isDaily' => $granularity === ReportService::BY_DAY,
             'garageTypeOptions' => [
                 Const_Type::GARAGE_BICYCLE => 'Bicycle',
                 Const_Type::GARAGE_CAR => 'Car',
@@ -83,35 +77,21 @@ final class Index extends Component
     }
 
     /**
-     * Run the chosen report with only the filters that apply to it.
+     * One row per day when the range is inside one month, otherwise one row per month. The garage
+     * type and tenant filters narrow both.
      *
-     * @return list<array<string, mixed>>
+     * @return array{granularity: string, rows: list<array<string, mixed>>}
      *
      * @throws GeneralException
      */
-    private function rows(): array
+    private function report(): array
     {
-        $year = $this->optionalInteger($this->year, 'Year');
-        $month = $this->optionalInteger($this->month, 'Month');
-        $garageType = $this->optionalString($this->garage_type);
-        $userId = $this->optionalString($this->user_id);
-
-        return match ($this->report) {
-            self::REPORT_MONTHLY => ReportService::monthly(
-                $year ?? throw new GeneralException('Year is required.'),
-                $garageType,
-                $userId,
-            ),
-            self::REPORT_DAILY => ReportService::daily(
-                $year ?? throw new GeneralException('Year is required.'),
-                $month ?? throw new GeneralException('Month is required.'),
-                $garageType,
-                $userId,
-            ),
-            self::REPORT_GARAGE_TYPE => ReportService::byGarageType($year, $month, $userId),
-            self::REPORT_TENANT => ReportService::byTenant($year, $month, $garageType),
-            default => throw new GeneralException('Report type is not valid.'),
-        };
+        return ReportService::forRange(
+            $this->optionalString($this->start_date),
+            $this->optionalString($this->end_date),
+            $this->optionalString($this->garage_type),
+            $this->optionalString($this->user_id),
+        );
     }
 
     /**
@@ -133,21 +113,5 @@ final class Index extends Component
     private function optionalString(mixed $value): ?string
     {
         return $value === null || $value === '' ? null : (string) $value;
-    }
-
-    /**
-     * @throws GeneralException
-     */
-    private function optionalInteger(mixed $value, string $label): ?int
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        if (! is_numeric($value) || (int) $value != $value) {
-            throw new GeneralException("{$label} is not valid.");
-        }
-
-        return (int) $value;
     }
 }

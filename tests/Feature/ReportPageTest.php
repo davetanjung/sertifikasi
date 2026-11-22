@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\ChargingTransactionService;
 use App\Services\RentalService;
-use App\Services\ReportService;
 use App\Utilities\Constants\Const_Type;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,6 +44,14 @@ class ReportPageTest extends TestCase
     private function page()
     {
         return Livewire::actingAs($this->admin())->test(Index::class);
+    }
+
+    /**
+     * The page set to every month of 2026.
+     */
+    private function yearPage()
+    {
+        return $this->page()->set('start_date', '2026-01-01')->set('end_date', '2026-12-31');
     }
 
     /**
@@ -104,133 +111,141 @@ class ReportPageTest extends TestCase
         $this->actingAs($this->admin())->get(route('report.index'))->assertOk()->assertSeeLivewire(Index::class);
     }
 
-    public function test_the_default_is_the_monthly_report_of_the_current_year(): void
+    public function test_the_default_is_today_with_one_day_row(): void
     {
         $this->rent('2026-11-10');
+        $this->rent('2026-11-09');
+        Carbon::setTestNow('2026-11-10 09:00:00');
 
         $this->page()
-            ->assertSet('report', 'monthly')
-            ->assertSet('year', 2026)
-            ->assertSet('month', 11)
+            ->assertSet('start_date', '2026-11-10')
+            ->assertSet('end_date', '2026-11-10')
+            ->assertViewHas('isDaily', true)
             ->assertViewHas('reportError', null)
-            ->assertViewHas('rows', fn ($rows) => count($rows) === 12
-                && array_keys($rows[0]) === ['month', 'rentals', 'rent_income', 'charging_income', 'total_income']
-                && $rows[10]['rentals'] === 1
-                && $rows[10]['rent_income'] === 3000.0);
+            ->assertViewHas('rows', fn ($rows) => count($rows) === 1
+                && array_keys($rows[0]) === ['date', 'rentals', 'rent_income', 'charging_income', 'total_income']
+                && $rows[0]['date'] === '2026-11-10'
+                && $rows[0]['rentals'] === 1
+                && $rows[0]['rent_income'] === 3000.0);
     }
 
-    public function test_each_report_type_returns_its_row_shape(): void
+    public function test_a_range_over_several_months_shows_one_row_per_month(): void
+    {
+        $this->rent('2026-11-10');
+        Carbon::setTestNow('2026-11-10 09:00:00');
+
+        $this->page()->set('start_date', '2026-01-01')->set('end_date', '2026-12-31')
+            ->assertViewHas('isDaily', false)
+            ->assertViewHas('rows', fn ($rows) => count($rows) === 12
+                && array_keys($rows[0]) === ['month', 'rentals', 'rent_income', 'charging_income', 'total_income']
+                && $rows[10]['month'] === '2026-11'
+                && $rows[10]['rentals'] === 1);
+    }
+
+    public function test_a_range_inside_one_month_shows_one_row_per_day(): void
     {
         $rental = $this->rent('2026-11-10', Const_Type::GARAGE_ELECTRIC_CAR);
         $this->charge($rental, '2026-11-11');
         Carbon::setTestNow('2026-11-10 09:00:00');
 
-        $this->page()->set('report', 'daily')
+        $this->page()->set('start_date', '2026-11-01')->set('end_date', '2026-11-30')
+            ->assertViewHas('isDaily', true)
             ->assertViewHas('rows', fn ($rows) => count($rows) === 30
-                && array_keys($rows[0]) === ['day', 'date', 'rentals', 'rent_income', 'charging_income', 'total_income']
+                && array_keys($rows[0]) === ['date', 'rentals', 'rent_income', 'charging_income', 'total_income']
                 && $rows[9]['rentals'] === 1
                 && $rows[10]['charging_income'] === 20000.0);
 
-        $this->page()->set('report', 'garage_type')
-            ->assertViewHas('rows', fn ($rows) => count($rows) === 3
-                && array_keys($rows[0]) === ['garage_type', 'rentals', 'rent_income', 'charging_income', 'total_income']
-                && collect($rows)->firstWhere('garage_type', Const_Type::GARAGE_ELECTRIC_CAR)['total_income'] === 23000.0);
-
-        $this->page()->set('report', 'tenant')
-            ->assertViewHas('rows', fn ($rows) => count($rows) === 1
-                && array_keys($rows[0]) === ['user_id', 'name', 'email', 'rentals', 'rent_income', 'charging_income', 'total_income']
-                && $rows[0]['user_id'] === $rental->user_id);
+        $this->page()->set('start_date', '2026-11-10')->set('end_date', '2026-11-12')
+            ->assertViewHas('rows', fn ($rows) => array_column($rows, 'date') === ['2026-11-10', '2026-11-11', '2026-11-12']);
     }
 
-    public function test_the_filters_are_applied(): void
+    public function test_the_date_range_changes_the_period(): void
+    {
+        $this->rent('2026-11-10');
+        $this->rent('2027-03-05');
+        Carbon::setTestNow('2026-11-10 09:00:00');
+
+        $this->yearPage()->assertViewHas('totals', fn ($totals) => $totals['rentals'] === 1);
+        $this->page()->set('start_date', '2027-01-01')->set('end_date', '2027-12-31')
+            ->assertViewHas('rows', fn ($rows) => $rows[2]['rentals'] === 1);
+        $this->page()->set('start_date', '2026-01-01')->set('end_date', '2027-12-31')
+            ->assertViewHas('rows', fn ($rows) => count($rows) === 24)
+            ->assertViewHas('totals', fn ($totals) => $totals['rentals'] === 2);
+    }
+
+    public function test_the_garage_type_and_tenant_filters_narrow_the_rows(): void
     {
         $alice = User::factory()->create(['name' => 'Alice']);
         $bob = User::factory()->create(['name' => 'Bob']);
         $this->rent('2026-11-10', Const_Type::GARAGE_CAR, $alice);
         $this->rent('2026-11-10', Const_Type::GARAGE_ELECTRIC_CAR, $bob);
 
-        $this->page()
+        $this->yearPage()
+            ->assertViewHas('rows', fn ($rows) => $rows[10]['rentals'] === 2);
+
+        $this->yearPage()
             ->set('garage_type', Const_Type::GARAGE_CAR)
             ->assertViewHas('rows', fn ($rows) => $rows[10]['rentals'] === 1);
 
-        $this->page()
+        $this->yearPage()
             ->set('user_id', $bob->id)
             ->assertViewHas('rows', fn ($rows) => $rows[10]['rentals'] === 1 && $rows[10]['rent_income'] === 3000.0);
 
-        $this->page()
+        $this->yearPage()
+            ->set('garage_type', Const_Type::GARAGE_CAR)
+            ->set('user_id', $bob->id)
+            ->assertViewHas('rows', fn ($rows) => $rows[10]['rentals'] === 0);
+
+        $this->yearPage()
             ->set('garage_type', Const_Type::GARAGE_BICYCLE)
             ->assertViewHas('rows', fn ($rows) => $rows[10]['rentals'] === 0);
 
         $this->page()
-            ->set('report', 'tenant')
-            ->set('garage_type', Const_Type::GARAGE_CAR)
-            ->assertViewHas('rows', fn ($rows) => array_column($rows, 'name') === ['Alice']);
-
-        $this->page()
-            ->set('report', 'garage_type')
+            ->set('start_date', '2026-11-01')
+            ->set('end_date', '2026-11-30')
             ->set('user_id', $alice->id)
             ->assertViewHas('rows', fn ($rows) => collect($rows)->sum('rentals') === 1);
-
-        $this->page()
-            ->set('report', 'daily')
-            ->set('month', 12)
-            ->assertViewHas('rows', fn ($rows) => count($rows) === 31 && collect($rows)->sum('rentals') === 0);
     }
 
-    public function test_an_empty_year_means_all_time_for_the_garage_type_and_tenant_reports(): void
+    public function test_the_page_shows_the_filters_and_no_report_tabs(): void
+    {
+        $this->actingAs($this->admin())->get(route('report.index'))
+            ->assertOk()
+            ->assertSee('Start date')
+            ->assertSee('End date')
+            ->assertSee('Garage type')
+            ->assertSee('Tenant')
+            ->assertDontSee('Per garage type')
+            ->assertDontSee('Per tenant')
+            ->assertDontSee('aria-label="Report type"', false);
+    }
+
+    public function test_the_first_column_and_labels_follow_the_range(): void
     {
         $this->rent('2026-11-10');
-        $this->rent('2027-03-05');
         Carbon::setTestNow('2026-11-10 09:00:00');
 
-        foreach (['garage_type', 'tenant'] as $report) {
-            $this->page()
-                ->set('report', $report)
-                ->set('year', '')
-                ->set('month', '')
-                ->assertViewHas('reportError', null)
-                ->assertViewHas('rows', fn ($rows) => collect($rows)->sum('rentals') === 2);
-
-            $this->page()
-                ->set('report', $report)
-                ->set('year', 2027)
-                ->set('month', '')
-                ->assertViewHas('rows', fn ($rows) => collect($rows)->sum('rentals') === 1);
-        }
+        $this->yearPage()->assertSeeHtml('>Month</th>')->assertSee('November 2026')
+            ->set('start_date', '2026-11-01')->set('end_date', '2026-11-30')
+            ->assertSeeHtml('>Day</th>')->assertSee('2026-11-10');
     }
 
-    public function test_a_month_without_a_year_gives_a_report_error_not_an_exception(): void
+    public function test_a_missing_date_gives_a_report_error_not_an_exception(): void
     {
-        foreach (['garage_type', 'tenant'] as $report) {
-            $this->page()
-                ->set('report', $report)
-                ->set('year', '')
-                ->set('month', 3)
-                ->assertOk()
-                ->assertViewHas('rows', [])
-                ->assertViewHas('reportError', 'Month needs a year.');
-        }
-    }
-
-    public function test_monthly_and_daily_require_their_year_and_month(): void
-    {
-        $this->page()->set('year', '')
-            ->assertViewHas('reportError', 'Year is required.')
+        $this->page()->set('start_date', '')
+            ->assertOk()
+            ->assertViewHas('reportError', 'Start date is required.')
             ->assertViewHas('rows', []);
 
-        $this->page()->set('report', 'daily')->set('month', '')
-            ->assertViewHas('reportError', 'Month is required.');
-
-        $this->page()->set('report', 'daily')->set('year', '')
-            ->assertViewHas('reportError', 'Year is required.');
+        $this->page()->set('end_date', null)
+            ->assertViewHas('reportError', 'End date is required.');
     }
 
     public function test_invalid_values_give_a_report_error(): void
     {
-        $this->page()->set('report', 'weekly')->assertViewHas('reportError', 'Report type is not valid.');
-        $this->page()->set('year', 'abc')->assertViewHas('reportError', 'Year is not valid.');
-        $this->page()->set('year', 1999)->assertViewHas('reportError', 'Year is not valid.');
-        $this->page()->set('report', 'daily')->set('month', 13)->assertViewHas('reportError', 'Month must be between 1 and 12.');
+        $this->page()->set('start_date', 'abc')->assertViewHas('reportError', 'Start date is not valid.');
+        $this->page()->set('start_date', '2025-12-31')->assertViewHas('reportError', 'Start date cannot be before 2026.');
+        $this->page()->set('end_date', '2025-12-31')->assertViewHas('reportError', 'End date cannot be before start date.');
         $this->page()->set('garage_type', 'boat')->assertViewHas('reportError', 'Garage type is not valid.');
     }
 
@@ -241,20 +256,20 @@ class ReportPageTest extends TestCase
         $this->charge($electric, '2026-11-11');
         Carbon::setTestNow('2026-11-10 09:00:00');
 
-        $this->page()->assertViewHas('totals', fn ($totals) => $totals === [
+        $this->yearPage()->assertViewHas('totals', fn ($totals) => $totals === [
             'rentals' => 2,
             'rent_income' => 6000.0,
             'charging_income' => 20000.0,
             'total_income' => 26000.0,
         ]);
 
-        $this->page()->set('report', 'garage_type')->set('month', '')
-            ->assertViewHas('totals', fn ($totals) => $totals['rentals'] === 2 && $totals['total_income'] === 26000.0);
+        $this->page()->set('start_date', '2026-11-01')->set('end_date', '2026-11-30')
+            ->assertViewHas('totals', fn ($totals) => $totals['rentals'] === 1 && $totals['total_income'] === 23000.0);
     }
 
     public function test_the_totals_are_zero_when_there_is_an_error(): void
     {
-        $this->page()->set('year', '')->assertViewHas('totals', [
+        $this->page()->set('start_date', '')->assertViewHas('totals', [
             'rentals' => 0,
             'rent_income' => 0.0,
             'charging_income' => 0.0,
@@ -272,16 +287,23 @@ class ReportPageTest extends TestCase
         $this->page()
             ->assertViewHas('tenantOptions', fn ($options) => array_values($options) === ['Amy', 'Zed']
                 && array_keys($options) === [$first->id, $approved->id])
-            ->assertViewHas('yearOptions', [2026 => '2026', 2027 => '2027'])
-            ->assertViewHas('monthOptions', fn ($options) => count($options) === 12
-                && $options[1] === 'January'
-                && $options[12] === 'December')
-            ->assertViewHas('garageTypeOptions', fn ($options) => array_keys($options) === Const_Type::GARAGE_TYPES)
-            ->assertViewHas('reportOptions', fn ($options) => array_keys($options) === ['monthly', 'daily', 'garage_type', 'tenant']);
+            ->assertViewHas('garageTypeOptions', fn ($options) => array_keys($options) === Const_Type::GARAGE_TYPES);
     }
 
-    public function test_the_years_come_from_the_service(): void
+    public function test_reset_filters_goes_back_to_the_default_filters(): void
     {
-        $this->assertSame([2026, 2027], ReportService::years());
+        $tenant = User::factory()->create();
+
+        Livewire::actingAs($this->admin())
+            ->test(Index::class)
+            ->set('start_date', '2027-03-01')
+            ->set('end_date', '2027-03-31')
+            ->set('garage_type', Const_Type::GARAGE_CAR)
+            ->set('user_id', $tenant->id)
+            ->call('resetFilters')
+            ->assertSet('start_date', '2026-11-10')
+            ->assertSet('end_date', '2026-11-10')
+            ->assertSet('garage_type', null)
+            ->assertSet('user_id', null);
     }
 }

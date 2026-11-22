@@ -10,6 +10,8 @@ use App\Models\Rental;
 use App\Utilities\Constants\Const_Status;
 use App\Utilities\Constants\Const_Type;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
+use Carbon\CarbonPeriod;
 use Closure;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as SupportCollection;
@@ -25,162 +27,116 @@ final class ReportService
 
     private const MAXIMUM_YEAR = 2300;
 
-    /**
-     * The years to pick from in a report: the first supported year up to next year.
-     *
-     * @return list<int>
-     */
-    public static function years(): array
-    {
-        return range(self::MINIMUM_YEAR, max(self::MINIMUM_YEAR, now()->year + 1));
-    }
+    public const BY_DAY = 'day';
+
+    public const BY_MONTH = 'month';
 
     /**
-     * Twelve rows, January to December, months without activity included.
+     * The report for a date range. A range inside one calendar month gives one row per day, any longer
+     * range gives one row per month (from the start month to the end month). Periods without activity
+     * are included. Rentals are counted on their start date and charging on the day it was created.
+     * The garage type and tenant filters narrow both.
      *
-     * @return list<array{month: int, rentals: int, rent_income: float, charging_income: float, total_income: float}>
+     * @return array{granularity: string, rows: list<array<string, mixed>>}
      *
      * @throws GeneralException
      */
-    public static function monthly(int $year, ?string $garageType = null, ?string $userId = null): array
-    {
-        self::validate($year, null, $garageType);
+    public static function forRange(
+        string|CarbonInterface|null $startDate,
+        string|CarbonInterface|null $endDate,
+        ?string $garageType = null,
+        ?string $userId = null,
+    ): array {
+        [$start, $end] = self::validateRange($startDate, $endDate, $garageType);
 
-        [$start, $end] = self::period($year, null);
+        $rentals = self::rentalRows($start, $end, $garageType, $userId);
+        $chargings = self::chargingRows($start, $end, $garageType, $userId);
 
-        return self::rowsPerKey(
-            self::rentalRows($start, $end, $garageType, $userId),
-            self::chargingRows($start, $end, $garageType, $userId),
-            range(1, 12),
-            fn (Rental $rental): int => $rental->start_date->month,
-            fn (ChargingTransaction $charging): int => $charging->created_at->month,
-            fn (int $month): array => ['month' => $month],
-        );
-    }
+        if ($start->format('Y-m') === $end->format('Y-m')) {
+            $days = collect(CarbonPeriod::create($start, $end))->map(fn (Carbon $day): string => $day->toDateString())->all();
 
-    /**
-     * One row per day of the month, days without activity included.
-     *
-     * @return list<array{day: int, date: string, rentals: int, rent_income: float, charging_income: float, total_income: float}>
-     *
-     * @throws GeneralException
-     */
-    public static function daily(int $year, int $month, ?string $garageType = null, ?string $userId = null): array
-    {
-        self::validate($year, $month, $garageType);
-
-        [$start, $end] = self::period($year, $month);
-
-        return self::rowsPerKey(
-            self::rentalRows($start, $end, $garageType, $userId),
-            self::chargingRows($start, $end, $garageType, $userId),
-            range(1, $start->daysInMonth),
-            fn (Rental $rental): int => $rental->start_date->day,
-            fn (ChargingTransaction $charging): int => $charging->created_at->day,
-            fn (int $day): array => ['day' => $day, 'date' => $start->copy()->day($day)->toDateString()],
-        );
-    }
-
-    /**
-     * One row per garage type, all three always present. Year and month are optional filters.
-     *
-     * @return list<array{garage_type: string, rentals: int, rent_income: float, charging_income: float, total_income: float}>
-     *
-     * @throws GeneralException
-     */
-    public static function byGarageType(?int $year = null, ?int $month = null, ?string $userId = null): array
-    {
-        self::validate($year, $month, null);
-
-        [$start, $end] = self::period($year, $month);
-
-        return self::rowsPerKey(
-            self::rentalRows($start, $end, null, $userId),
-            self::chargingRows($start, $end, null, $userId),
-            Const_Type::GARAGE_TYPES,
-            fn (Rental $rental): string => $rental->garage->type,
-            fn (ChargingTransaction $charging): string => $charging->rental->garage->type,
-            fn (string $type): array => ['garage_type' => $type],
-        );
-    }
-
-    /**
-     * One row per tenant with activity, highest total income first, then by name.
-     *
-     * @return list<array{user_id: string, name: string, email: string, rentals: int, rent_income: float, charging_income: float, total_income: float}>
-     *
-     * @throws GeneralException
-     */
-    public static function byTenant(?int $year = null, ?int $month = null, ?string $garageType = null): array
-    {
-        self::validate($year, $month, $garageType);
-
-        [$start, $end] = self::period($year, $month);
-
-        $rentals = self::rentalRows($start, $end, $garageType, null);
-        $chargings = self::chargingRows($start, $end, $garageType, null);
-
-        $tenants = $rentals->map(fn (Rental $rental) => $rental->user)
-            ->concat($chargings->map(fn (ChargingTransaction $charging) => $charging->rental->user))
-            ->unique('id');
-
-        $rentalsByTenant = $rentals->groupBy('user_id');
-        $chargingsByTenant = $chargings->groupBy(fn (ChargingTransaction $charging): string => $charging->rental->user_id);
-
-        return $tenants
-            ->map(fn ($tenant): array => [
-                'user_id' => $tenant->id,
-                'name' => $tenant->name,
-                'email' => $tenant->email,
-                ...self::buildRow(
-                    $rentalsByTenant->get($tenant->id, collect()),
-                    $chargingsByTenant->get($tenant->id, collect()),
+            return [
+                'granularity' => self::BY_DAY,
+                'rows' => self::rowsPerKey(
+                    $rentals,
+                    $chargings,
+                    $days,
+                    fn (Rental $rental): string => $rental->start_date->toDateString(),
+                    fn (ChargingTransaction $charging): string => $charging->created_at->toDateString(),
+                    fn (string $day): array => ['date' => $day],
                 ),
-            ])
-            ->sort(fn (array $a, array $b): int => [$b['total_income'], $a['name']] <=> [$a['total_income'], $b['name']])
-            ->values()
+            ];
+        }
+
+        $months = collect(CarbonPeriod::create($start->copy()->startOfMonth(), '1 month', $end->copy()->startOfMonth()))
+            ->map(fn (Carbon $month): string => $month->format('Y-m'))
             ->all();
+
+        return [
+            'granularity' => self::BY_MONTH,
+            'rows' => self::rowsPerKey(
+                $rentals,
+                $chargings,
+                $months,
+                fn (Rental $rental): string => $rental->start_date->format('Y-m'),
+                fn (ChargingTransaction $charging): string => $charging->created_at->format('Y-m'),
+                fn (string $month): array => ['month' => $month],
+            ),
+        ];
     }
 
     /**
-     * Reject filter values that make no sense.
+     * Reject filter values that make no sense and return the range as whole days.
+     *
+     * @return array{0: Carbon, 1: Carbon}
      *
      * @throws GeneralException
      */
-    private static function validate(?int $year, ?int $month, ?string $garageType): void
+    private static function validateRange(string|CarbonInterface|null $startDate, string|CarbonInterface|null $endDate, ?string $garageType): array
     {
-        if ($month !== null && $year === null) {
-            throw new GeneralException('Month needs a year.');
+        $start = self::parseDate($startDate, 'Start date');
+        $end = self::parseDate($endDate, 'End date');
+
+        if ($start->year < self::MINIMUM_YEAR) {
+            throw new GeneralException('Start date cannot be before '.self::MINIMUM_YEAR.'.');
         }
 
-        if ($year !== null && ($year < self::MINIMUM_YEAR || $year > self::MAXIMUM_YEAR)) {
-            throw new GeneralException('Year is not valid.');
+        if ($end->lt($start)) {
+            throw new GeneralException('End date cannot be before start date.');
         }
 
-        if ($month !== null && ($month < 1 || $month > 12)) {
-            throw new GeneralException('Month must be between 1 and 12.');
+        if ($end->year > self::MAXIMUM_YEAR) {
+            throw new GeneralException('End date is not valid.');
         }
 
         if ($garageType !== null && ! in_array($garageType, Const_Type::GARAGE_TYPES, true)) {
             throw new GeneralException('Garage type is not valid.');
         }
+
+        return [$start, $end];
     }
 
     /**
-     * First and last day of the period, or null bounds when there is no year (no date filter).
-     *
-     * @return array{0: ?Carbon, 1: ?Carbon}
+     * @throws GeneralException
      */
-    private static function period(?int $year, ?int $month): array
+    private static function parseDate(string|CarbonInterface|null $value, string $label): Carbon
     {
-        if ($year === null) {
-            return [null, null];
+        if ($value === null || $value === '') {
+            throw new GeneralException("{$label} is required.");
         }
 
-        $start = Carbon::create($year, $month ?? 1, 1)->startOfDay();
-        $end = $month === null ? $start->copy()->endOfYear() : $start->copy()->endOfMonth();
+        if ($value instanceof CarbonInterface) {
+            return Carbon::instance($value)->startOfDay();
+        }
 
-        return [$start, $end];
+        $date = Carbon::canBeCreatedFromFormat($value, 'Y-m-d') ? Carbon::createFromFormat('!Y-m-d', $value) : null;
+
+        // A date such as 2026-02-31 rolls over to March, so compare it back to what was typed.
+        if ($date === null || $date->toDateString() !== $value) {
+            throw new GeneralException("{$label} is not valid.");
+        }
+
+        return $date;
     }
 
     /**
@@ -188,13 +144,12 @@ final class ReportService
      *
      * @return Collection<int, Rental>
      */
-    private static function rentalRows(?Carbon $start, ?Carbon $end, ?string $garageType, ?string $userId): Collection
+    private static function rentalRows(Carbon $start, Carbon $end, ?string $garageType, ?string $userId): Collection
     {
         return Rental::query()
             ->with(['garage', 'user'])
-            ->when($start !== null, fn ($query) => $query
-                ->whereDate('start_date', '>=', $start->toDateString())
-                ->whereDate('start_date', '<=', $end->toDateString()))
+            ->whereDate('start_date', '>=', $start->toDateString())
+            ->whereDate('start_date', '<=', $end->toDateString())
             ->when($garageType !== null, fn ($query) => $query
                 ->whereHas('garage', fn ($garage) => $garage->where('type', $garageType)))
             ->when($userId !== null, fn ($query) => $query->where('user_id', $userId))
@@ -206,13 +161,12 @@ final class ReportService
      *
      * @return Collection<int, ChargingTransaction>
      */
-    private static function chargingRows(?Carbon $start, ?Carbon $end, ?string $garageType, ?string $userId): Collection
+    private static function chargingRows(Carbon $start, Carbon $end, ?string $garageType, ?string $userId): Collection
     {
         return ChargingTransaction::query()
             ->with(['rental.garage', 'rental.user'])
-            ->when($start !== null, fn ($query) => $query
-                ->whereDate('created_at', '>=', $start->toDateString())
-                ->whereDate('created_at', '<=', $end->toDateString()))
+            ->whereDate('created_at', '>=', $start->toDateString())
+            ->whereDate('created_at', '<=', $end->toDateString())
             ->when($garageType !== null, fn ($query) => $query
                 ->whereHas('rental.garage', fn ($garage) => $garage->where('type', $garageType)))
             ->when($userId !== null, fn ($query) => $query

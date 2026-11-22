@@ -86,7 +86,7 @@ class DemoSeedingTest extends TestCase
         $monthsWithIncome = 0;
 
         foreach (Rental::all()->map(fn (Rental $rental) => $rental->start_date->year)->unique() as $year) {
-            foreach (ReportService::monthly($year) as $row) {
+            foreach (ReportService::forRange("{$year}-01-01", "{$year}-12-31")['rows'] as $row) {
                 if ($row['total_income'] > 0) {
                     $monthsWithIncome++;
                 }

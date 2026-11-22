@@ -72,7 +72,7 @@ Admin:
 - Approve or reject tenant registrations.
 - Create garages in batches (type, quantity, daily price, price per kWh for electric garages).
 - Extend a running rental and upload the payment proof.
-- View reports per month, per day, per garage type and per tenant (filters: year, month, garage type, tenant).
+- View reports for a date range: one row per day inside a single month, one row per month for a longer range (filters: start date, end date, garage type, tenant).
 - View all vehicles, rentals and charging transactions (read only).
 
 There are no edit or delete features.
@@ -97,7 +97,7 @@ There are no edit or delete features.
   in kW (0 to the maximum). Charged kWh = max kW - current kW, amount = charged kWh x the garage price per kWh. A full
   battery is rejected. An electric car in a normal car garage has no charging.
 - Reports count only `new` rows as rentals. Income = rent of `new` and `extension` rows (by start date) + charging
-  (by the date recorded). The first year is 2026.
+  (by the date recorded). The first allowed start date is 1 January 2026.
 
 ## Codes
 

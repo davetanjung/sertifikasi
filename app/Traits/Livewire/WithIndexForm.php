@@ -84,7 +84,7 @@ trait WithIndexForm
         $this->dispatch('page-to-top');
     }
 
-    public function processDelete($id): never
+    public function processDelete($id): void
     {
         throw new GeneralException('processDelete function must be defined in '.static::class);
     }

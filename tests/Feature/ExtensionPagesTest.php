@@ -233,6 +233,14 @@ class ExtensionPagesTest extends TestCase
             ->assertViewHas('blockedReason', null);
     }
 
+    public function test_the_date_picker_starts_the_day_after_the_latest_end_date(): void
+    {
+        $rental = $this->rent(); // ends 12 Nov
+        RentalService::extend($rental, '2026-11-14', 'extension-proofs/a.jpg');
+
+        $this->createPage($rental)->assertSeeHtml('min="2026-11-15"');
+    }
+
     public function test_an_ended_rental_is_blocked(): void
     {
         $rental = $this->rent();

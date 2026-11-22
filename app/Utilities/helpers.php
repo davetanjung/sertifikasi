@@ -172,15 +172,6 @@ if (! function_exists('_is_zero')) {
     }
 }
 
-if (! function_exists('_safe_mod')) {
-    function _safe_mod($x, $y, $precision = 4): float
-    {
-        $mod = fmod((float) $x, (float) $y);
-
-        return (abs($mod) < 10 ** -$precision) ? 0.0 : $mod;
-    }
-}
-
 // ----------------------------------------------------------------------------
 // Date parsers
 // ----------------------------------------------------------------------------

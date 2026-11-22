@@ -77,6 +77,7 @@
                             label="New end date"
                             name="new_end_date"
                             type="date"
+                            :min="\Carbon\Carbon::parse($latestEndDate)->addDay()->toDateString()"
                             wire:model.live="new_end_date"
                         />
                     </div>

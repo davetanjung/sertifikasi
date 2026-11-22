@@ -185,7 +185,7 @@ Run with `composer run dev`. `php artisan migrate:fresh --seed` rebuilds the dem
 - There is no charging speed, no `charging_settings` table, and nothing is paid for charging at rental time.
 
 ## Reports
-Admin only (`ReportService`). Per month in a year, per day in a month, per garage type and per tenant, with filters (year, month, garage type, tenant). Each row has the number of rentals (only `new` rows count), rent income (`rent_amount` of `new` and `extension` rows, grouped by start date), charging income (grouped by the date recorded) and the total. The first year is 2026.
+Admin only (`ReportService::forRange()`). One page with no tabs: the filters are start date, end date, garage type and tenant. A range inside one calendar month gives one row per day, a longer range gives one row per month, The page opens on today (start and end date both today). "Per month in a year" is 1 Jan to 31 Dec and "per day in a month" is the first to the last day of that month. Each row has the number of rentals (only `new` rows count), rent income (`rent_amount` of `new` and `extension` rows, grouped by start date), charging income (grouped by the date recorded) and the total. The first allowed start date is 1 January 2026.
 
 ## Conventions specific to this project
 - **Pages**: no controllers. Every page is a Livewire component (Index, Create, Show; no Edit and no delete anywhere) in `app/Livewire/<Module>/`, using the traits in `App\Traits\Livewire`. Routes are at the root (`garage.index`, `rental.create`, ...) in `routes/web.php`; logout is a route closure. Middleware aliases: `admin` and `approved`. Pages that are role-specific also guard themselves in `mount()` with `abort_unless`/`abort_if`.
@@ -197,7 +197,7 @@ Admin only (`ReportService`). Per month in a year, per day in a month, per garag
 - **Migrations**: every decision (foreign key delete behavior, `nullable`, `unique`, `default`, non-obvious column types) needs a short comment saying why. See "Migration rules" in `.claude/agents/backend.md`.
 - **Seeders**: `AdminSeeder`, `TenantSeeder`, `VehicleSeeder`, `GarageSeeder`, `RentalSeeder`, run in that order by `DatabaseSeeder`. They go through the services, so demo data follows the real rules.
 - **UI** (details in `.claude/agents/fe-design.md`): monochrome (white, black, neutral grays); dark green (800/900) and dark red (800/900) only for statuses and errors; no gradients or shadows. Black sidebar, white top bar with a user dropdown (Logout). Layouts `components.layouts.app` and `components.layouts.auth`. Reuse the shared Blade components in `resources/views/components` before creating new ones. All page text is in English.
-- **Tests**: PHPUnit classes in `tests/Feature` (services, pages, auth, seeding), about 340 tests. Run `php artisan test`. Pest is not installed.
+- **Tests**: PHPUnit classes. `tests/Unit` has one test class per class in `app/` (services, models, traits, middleware, helpers, Livewire pages) in folders that mirror `app/`, and tests every function. `tests/Feature` has the end-to-end page, auth and seeding tests. Run `php artisan test`. Pest is not installed.
 - Use the project's subagents in `.claude/agents` (`backend`, `fe-design`, `software-architecture`) when the task matches their scope.
 
 ## Where things live

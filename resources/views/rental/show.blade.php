@@ -27,6 +27,16 @@
                 </a>
             @endif
 
+            @if ($canExtend && Route::has('extension.create'))
+                <a
+                    href="{{ route('extension.create', ['rental' => $obj->id]) }}"
+                    class="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-black px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                >
+                    <x-icon name="calendar" class="size-4" />
+                    Extend rental
+                </a>
+            @endif
+
             <a
                 href="{{ route('rental.index') }}"
                 class="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-white px-4 text-sm font-semibold text-neutral-800 border border-neutral-400 transition hover:bg-neutral-100 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
